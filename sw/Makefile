@@ -14,7 +14,7 @@ XLEN ?= 32
 PREFIX ?= riscv$(XLEN)-unknown-elf
 ARCH_FLAGS ?= -march=rv32imc -mabi=ilp32
 CC=$(PREFIX)-gcc
-CFLAGS=-O2 -g -ffunction-sections -fdata-sections -Icommon/
+CFLAGS=-O2 -g -ffunction-sections -fdata-sections -Icommon/ -I./$(TESTCASE)/include/
 OBJDUMP ?= $(PREFIX)-objdump
 OBJCOPY ?= $(PREFIX)-objcopy
 
@@ -35,7 +35,7 @@ hex_test:
 	sed -E 's/(..)(..)(..)(..)/\4\3\2\1/' < $(BUILD_DIR)/tmp_be.hex > $(BUILD_DIR)/tmp_le.hex
 
 trim:
-	head -$(shell wc -w < $(BUILD_DIR)/tmp_le.hex) $(BUILD_DIR)/tmp_le.hex > $(BUILD_DIR)/sw/$(TEST).hex
+	head -$(shell wc -w < $(BUILD_DIR)/tmp_le.hex) $(BUILD_DIR)/tmp_le.hex > $(BUILD_DIR)/sw/$(TESTCASE).hex
 
 dump:
 	$(OBJDUMP) $(BUILD_DIR)/sw/$(TESTCASE).elf -d > $(BUILD_DIR)/sw/$(TESTCASE).asm
