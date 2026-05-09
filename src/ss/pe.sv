@@ -2,7 +2,7 @@ module pe #(
     parameter DATA_WIDTH = 32
 )(
     input wire clk,
-    input wire rst,
+    input wire rst_n,
 
     // Control signals
     input wire en,
@@ -12,21 +12,29 @@ module pe #(
     // Data signals
     input wire [DATA_WIDTH-1:0] i_data,
     output reg [DATA_WIDTH-1:0] o_data,
-    input wire [DATA_WIDTH-1:0] i_partial,
-    output reg [DATA_WIDTH-1:0] o_partial,
+    input wire [DATA_WIDTH-1:0] i_sum,
+    output reg [DATA_WIDTH-1:0] o_sum
 );
 
-/*
-- if en is low, do nothing
-- i_data comes from left and goes out through o_data (right).
-- load signal comes from top and passed to bottom.
+reg [DATA_WIDTH-1:0] weight_reg;
 
-TWO modes of operation - 
-
-LOAD - i_data is loaded into internal weight register.
-CALC - o_partial <= i_partial + i_data * weight_reg;
-
--- add additional control signal to select (INT8, INT16, etc)
-*/
+always @(posedge clk) begin
+    if(~rst_n) begin
+        o_load <= 0;
+    end
+    else begin
+        if(en) begin
+            o_load <= i_load;
+            o_data <= i_data;
+            
+            if(i_load) begin
+                weight_reg <= i_data;
+            end
+            else begin
+                o_sum <= i_data * weight_reg + i_sum;    
+            end            
+        end
+    end
+end
 
 endmodule
