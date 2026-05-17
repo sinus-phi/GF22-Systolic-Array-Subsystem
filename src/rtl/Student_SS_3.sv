@@ -51,13 +51,25 @@ module Student_SS_3(
 
 // WARNING: EVERYTHING ON AND ABOVE THIS LINE MAY BE OVERWRITTEN BY KACTUS2!!!
 
-// TODO: Replace this with your module implementation
-  assign PSLVERR = 'd0;
-  assign PREADY  = 'd0;
-  assign PRDATA  = 'd0;
-  assign irq_3   = 'd0;
+  sa_dummy_accel i_sa_dummy_accel (
+    .PADDR         (PADDR),
+    .PENABLE       (PENABLE),
+    .PSEL          (PSEL),
+    .PWDATA        (PWDATA),
+    .PWRITE        (PWRITE),
+    .PRDATA        (PRDATA),
+    .PREADY        (PREADY),
+    .PSLVERR       (PSLVERR),
+    .clk_i         (clk_in),
+    .rst_ni        (reset_int),
+    .irq_en_i      (irq_en_3),
+    .ss_ctrl_i     (ss_ctrl_3),
+    .pmod_gpi      (pmod_gpi),
+    .irq_o         (irq_3),
+    .pmod_gpo      (pmod_gpo),
+    .pmod_gpio_oe  (pmod_gpio_oe)
+  );
 
-  assign pmod_gpo     = 'h0;
-  assign pmod_gpio_oe = 'h0;
+  wire _unused_student_ss_3 = &{1'b0, high_speed_clk, 1'b0};
 
 endmodule
