@@ -1,0 +1,39 @@
+﻿A	sim/common/runner.py
+D	sim/kthtest/kth_simulate.sh
+D	sim/kthtest/kth_waves.do
+A	sim/test_pe.py
+A	sim/test_sa_ctrl.py
+M	src/ss/pe.sv
+M	src/ss/sa.sv
+A	src/ss/sa_ctrl.sv
+D	verification/student_ss/Makefile
+A	verification/student_ss/common/tests/__init__.py
+A	verification/student_ss/common/tests/ss/__init__.py
+R100	verification/student_ss/common/cl_student_base_seq.py	verification/student_ss/common/tests/ss/cl_student_base_seq.py
+R096	verification/student_ss/common/cl_student_base_testcase.py	verification/student_ss/common/tests/ss/cl_student_base_testcase.py
+R100	verification/student_ss/common/cl_student_tb_assertions.py	verification/student_ss/common/tests/ss/cl_student_tb_assertions.py
+R091	verification/student_ss/common/cl_student_tb_config.py	verification/student_ss/common/tests/ss/cl_student_tb_config.py
+R096	verification/student_ss/common/cl_student_tb_env.py	verification/student_ss/common/tests/ss/cl_student_tb_env.py
+R100	verification/student_ss/common/cl_student_tb_vsequencer.py	verification/student_ss/common/tests/ss/cl_student_tb_vsequencer.py
+R100	verification/student_ss/common/register_model/cl_reg_base_seq.py	verification/student_ss/common/tests/ss/register_model/cl_reg_base_seq.py
+R100	verification/student_ss/common/register_model/cl_reg_dynamic_seq.py	verification/student_ss/common/tests/ss/register_model/cl_reg_dynamic_seq.py
+R100	verification/student_ss/common/register_model/cl_reg_ss_ctrl_seq.py	verification/student_ss/common/tests/ss/register_model/cl_reg_ss_ctrl_seq.py
+R100	verification/student_ss/common/register_model/student_ss_regs_reg_block.py	verification/student_ss/common/tests/ss/register_model/student_ss_regs_reg_block.py
+R100	verification/student_ss/common/register_model/student_ss_regs_regs.py	verification/student_ss/common/tests/ss/register_model/student_ss_regs_regs.py
+R090	verification/student_ss/common/sequences/cl_student_irq_vseq.py	verification/student_ss/common/tests/ss/sequences/cl_student_irq_vseq.py
+R084	verification/student_ss/common/sequences/cl_student_random_vseq.py	verification/student_ss/common/tests/ss/sequences/cl_student_random_vseq.py
+R086	verification/student_ss/common/sequences/cl_student_read_pmod_vseq.py	verification/student_ss/common/tests/ss/sequences/cl_student_read_pmod_vseq.py
+R085	verification/student_ss/common/sequences/cl_student_rw_vseq.py	verification/student_ss/common/tests/ss/sequences/cl_student_rw_vseq.py
+R084	verification/student_ss/common/sequences/cl_student_ss_ctrl_vseq.py	verification/student_ss/common/tests/ss/sequences/cl_student_ss_ctrl_vseq.py
+R086	verification/student_ss/common/sequences/cl_student_write_pmod_vseq.py	verification/student_ss/common/tests/ss/sequences/cl_student_write_pmod_vseq.py
+R100	verification/student_ss/common/tb_top/top.sv	verification/student_ss/common/tests/ss/top.sv
+D	verification/student_ss/common/toplevel_rtl/toplevel.sv
+D	verification/student_ss/example/cl_student_example_test.py
+R096	verification/student_ss/test_cocotb_runner.py	verification/student_ss/test_cocotb_ss_runner.py
+A	verification/student_ss/tests/ss/__init__.py
+R075	verification/student_ss/tests/cl_student_irq_testcase.py	verification/student_ss/tests/ss/cl_student_irq_testcase.py
+R079	verification/student_ss/tests/cl_student_random_testcase.py	verification/student_ss/tests/ss/cl_student_random_testcase.py
+R087	verification/student_ss/tests/cl_student_read_pmod_testcase.py	verification/student_ss/tests/ss/cl_student_read_pmod_testcase.py
+R085	verification/student_ss/tests/cl_student_rw_testcase.py	verification/student_ss/tests/ss/cl_student_rw_testcase.py
+R083	verification/student_ss/tests/cl_student_ss_ctrl_testcase.py	verification/student_ss/tests/ss/cl_student_ss_ctrl_testcase.py
+R086	verification/student_ss/tests/cl_student_write_pmod_testcase.py	verification/student_ss/tests/ss/cl_student_write_pmod_testcase.py

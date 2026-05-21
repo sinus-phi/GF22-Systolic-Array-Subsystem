@@ -1,0 +1,9 @@
+﻿src/rtl/Student_SS_3.sv
+src/rtl/sa_addr_decoder.sv
+src/rtl/sa_apb_if.sv
+src/rtl/sa_dummy_accel.sv
+src/rtl/sa_dummy_output.sv
+src/rtl/sa_dummy_pkg.sv
+src/rtl/sa_main_fsm.sv
+src/rtl/sa_regbank.sv
+verification/sa_dummy/tb_sa_dummy_accel.sv
