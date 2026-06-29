@@ -17,6 +17,7 @@ module subsystem_topmodule (
     input  logic [31:0] PADDR,
     input  logic        PENABLE,
     input  logic        PSEL,
+    input  logic [3:0]  PSTRB,
     input  logic [31:0] PWDATA,
     input  logic        PWRITE,
     output logic [31:0] PRDATA,
@@ -48,6 +49,7 @@ module subsystem_topmodule (
 
   logic [11:0] local_addr;
   logic [31:0] bus_wdata;
+  logic [3:0]  bus_pstrb;
   logic        bus_wena;
   logic        bus_rena;
   logic [31:0] bus_rdata;
@@ -64,7 +66,7 @@ module subsystem_topmodule (
   logic        bus_ready;
 
   logic [31:0] config_word;
-  logic        config_valid;
+  logic        config_is_valid;
   logic        load_weights_cmd;
   logic        release_output_cmd;
   logic        soft_reset_cmd;
@@ -112,6 +114,7 @@ module subsystem_topmodule (
     .PADDR        (PADDR),
     .PENABLE      (PENABLE),
     .PSEL         (PSEL),
+    .PSTRB        (PSTRB),
     .PWDATA       (PWDATA),
     .PWRITE       (PWRITE),
     .PRDATA       (PRDATA),
@@ -121,6 +124,7 @@ module subsystem_topmodule (
     .rst_ni       (rst_ni),
     .local_addr_o (local_addr),
     .bus_wdata_o  (bus_wdata),
+    .bus_pstrb_o  (bus_pstrb),
     .bus_wena_o   (bus_wena),
     .bus_rena_o   (bus_rena),
     .bus_rdata_i  (bus_rdata),
@@ -134,10 +138,11 @@ module subsystem_topmodule (
   subsystem_addr_decoder i_addr_decoder (
     .local_addr_i      (local_addr),
     .bus_wdata_i       (bus_wdata),
+    .bus_pstrb_i       (bus_pstrb),
     .bus_wena_i        (bus_wena),
     .bus_rena_i        (bus_rena),
     .phase_i           (phase),
-    .config_valid_i    (config_valid),
+    .config_valid_i    (config_is_valid),
     .weights_valid_i   (weights_valid),
     .output_valid_i    (output_valid),
     .output_words_i    (output_words),
@@ -173,7 +178,7 @@ module subsystem_topmodule (
     .irq_en_i             (irq_en_i),
     .pmod_gpi             (pmod_gpi),
     .config_o             (config_word),
-    .config_valid_o       (config_valid),
+    .config_valid_o       (config_is_valid),
     .load_weights_cmd_o   (load_weights_cmd),
     .release_output_cmd_o (release_output_cmd),
     .clear_done_cmd_o     (clear_done_cmd),
@@ -209,7 +214,7 @@ module subsystem_topmodule (
     .input_vector_valid_i (input_vector_valid),
     .mac_overflow_i       (mac_overflow),
     .config_i             (config_word),
-    .config_valid_i       (config_valid),
+    .config_valid_i       (config_is_valid),
     .weight_start_o       (weight_start),
     .activation_start_o   (activation_start),
     .load_settle_active_o (load_settle_active),

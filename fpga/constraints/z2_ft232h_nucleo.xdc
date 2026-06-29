@@ -1,0 +1,91 @@
+# PYNQ-Z2 constraints for the local FT232H + Nucleo F411RE setup.
+#
+# This file is intentionally separate from z1.xdc. It maps the Didactic SoC
+# fabric JTAG to PMODB for an external FT232H MPSSE adapter and maps fabric
+# UART to PMODA for a Nucleo-based serial monitor.
+
+##############
+# Timing
+##############
+
+## PYNQ-Z2 PL reference clock: 125 MHz on H16.
+create_clock -period 8.000 -name global_clk -waveform {0.000 4.000} -add [get_ports clk_in]
+
+## External FT232H JTAG clock.
+create_clock -period 125.000 -name jtag_clk -waveform {0.000 62.500} -add [get_ports jtag_tck]
+set_input_jitter jtag_clk 1.000
+
+## JTAG specifics
+set_input_delay -clock jtag_clk -clock_fall 5.000 [get_ports jtag_tdi]
+set_input_delay -clock jtag_clk -clock_fall 5.000 [get_ports jtag_tms]
+set_output_delay -clock jtag_clk 5.000 [get_ports jtag_tdo]
+
+set_max_delay -to [get_ports jtag_tdo] 20.000
+set_max_delay -from [get_ports jtag_tms] 20.000
+set_max_delay -from [get_ports jtag_tdi] 20.000
+
+## Reset and asynchronous external IO
+set_false_path -from [get_ports reset]
+set_false_path -from [get_ports jtag_trst]
+set_false_path -from [get_ports uart_rx]
+set_false_path -from [get_ports gpio]
+set_false_path -to [get_ports uart_tx]
+
+## Clock crossing characteristics
+set_clock_groups -logically_exclusive -group [get_clocks -include_generated_clocks global_clk] -group [get_clocks jtag_clk]
+
+##################
+# Board IO
+##################
+
+## CLK
+set_property -dict {PACKAGE_PIN H16 IOSTANDARD LVCMOS33} [get_ports clk_in]
+
+## RESET: PYNQ-Z2 SW0
+set_property -dict {PACKAGE_PIN M20 IOSTANDARD LVCMOS33} [get_ports reset]
+
+## JTAG: PYNQ-Z2 PMODB for FT232H MPSSE
+## PMODB pin 1 / JB1_P / W14 <- FT232H AD0 / ADBUS0 / TCK
+set_property -dict {PACKAGE_PIN W14 IOSTANDARD LVCMOS33} [get_ports jtag_tck]
+## PMODB pin 2 / JB1_N / Y14 <- FT232H AD1 / ADBUS1 / TDI
+set_property -dict {PACKAGE_PIN Y14 IOSTANDARD LVCMOS33} [get_ports jtag_tdi]
+## PMODB pin 3 / JB2_P / T11 -> FT232H AD2 / ADBUS2 / TDO input
+set_property -dict {PACKAGE_PIN T11 IOSTANDARD LVCMOS33} [get_ports jtag_tdo]
+## PMODB pin 4 / JB2_N / T10 <- FT232H AD3 / ADBUS3 / TMS
+set_property -dict {PACKAGE_PIN T10 IOSTANDARD LVCMOS33} [get_ports jtag_tms]
+## PMODB pin 7 / JB3_P / V16 <- FT232H AD7 / ADBUS7, held high by layout_init.
+set_property -dict {PACKAGE_PIN V16 IOSTANDARD LVCMOS33} [get_ports jtag_trst]
+set_property PULLUP true [get_ports jtag_trst]
+
+## UART: PYNQ-Z2 PMODA for Nucleo UART bridge
+## PMODA pin 1 / JA1_P / Y18 -> Nucleo RX
+set_property -dict {PACKAGE_PIN Y18 IOSTANDARD LVCMOS33} [get_ports uart_tx]
+## PMODA pin 2 / JA1_N / Y19 <- Nucleo TX
+set_property -dict {PACKAGE_PIN Y19 IOSTANDARD LVCMOS33} [get_ports uart_rx]
+
+## SPI: PYNQ-Z2 Arduino SPI header plus adjacent Arduino digital pins
+set_property -dict {PACKAGE_PIN H15 IOSTANDARD LVCMOS33} [get_ports spi_sck]
+set_property -dict {PACKAGE_PIN T12 IOSTANDARD LVCMOS33} [get_ports {spi_data[0]}]
+set_property -dict {PACKAGE_PIN W15 IOSTANDARD LVCMOS33} [get_ports {spi_data[1]}]
+set_property -dict {PACKAGE_PIN U13 IOSTANDARD LVCMOS33} [get_ports {spi_data[2]}]
+set_property -dict {PACKAGE_PIN V13 IOSTANDARD LVCMOS33} [get_ports {spi_data[3]}]
+set_property -dict {PACKAGE_PIN F16 IOSTANDARD LVCMOS33} [get_ports {spi_csn[0]}]
+set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS33} [get_ports {spi_csn[1]}]
+
+## GPIO: remaining PMOD pins first, then unused Arduino digital pins.
+set_property -dict {PACKAGE_PIN Y16 IOSTANDARD LVCMOS33} [get_ports {gpio[0]}]
+set_property -dict {PACKAGE_PIN Y17 IOSTANDARD LVCMOS33} [get_ports {gpio[1]}]
+set_property -dict {PACKAGE_PIN U18 IOSTANDARD LVCMOS33} [get_ports {gpio[2]}]
+set_property -dict {PACKAGE_PIN U19 IOSTANDARD LVCMOS33} [get_ports {gpio[3]}]
+set_property -dict {PACKAGE_PIN W18 IOSTANDARD LVCMOS33} [get_ports {gpio[4]}]
+set_property -dict {PACKAGE_PIN W19 IOSTANDARD LVCMOS33} [get_ports {gpio[5]}]
+set_property -dict {PACKAGE_PIN W16 IOSTANDARD LVCMOS33} [get_ports {gpio[6]}]
+set_property -dict {PACKAGE_PIN V12 IOSTANDARD LVCMOS33} [get_ports {gpio[7]}]
+set_property -dict {PACKAGE_PIN W13 IOSTANDARD LVCMOS33} [get_ports {gpio[8]}]
+set_property -dict {PACKAGE_PIN U17 IOSTANDARD LVCMOS33} [get_ports {gpio[9]}]
+set_property -dict {PACKAGE_PIN V17 IOSTANDARD LVCMOS33} [get_ports {gpio[10]}]
+set_property -dict {PACKAGE_PIN V18 IOSTANDARD LVCMOS33} [get_ports {gpio[11]}]
+set_property -dict {PACKAGE_PIN T16 IOSTANDARD LVCMOS33} [get_ports {gpio[12]}]
+set_property -dict {PACKAGE_PIN R17 IOSTANDARD LVCMOS33} [get_ports {gpio[13]}]
+set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {gpio[14]}]
+set_property -dict {PACKAGE_PIN N17 IOSTANDARD LVCMOS33} [get_ports {gpio[15]}]

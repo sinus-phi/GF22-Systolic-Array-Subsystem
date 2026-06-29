@@ -1,0 +1,28 @@
+######################################
+# Didactic SoC
+# Local PYNQ-Z2 + FT232H + Nucleo FPGA flow.
+#
+# This makefile is intentionally separate from fpga/Makefile.
+######################################
+
+SHELL = bash
+VIVADO ?= vivado
+
+TEST ?= blinky
+
+export BUILD_DIR ?= ../build
+
+check_env:
+	mkdir -p $(BUILD_DIR)
+
+all_xilinx: check_env
+	$(VIVADO) -mode batch -notrace -source scripts/run_xilinx_z2_ft232h_nucleo.tcl
+
+all_xilinx_gui: check_env
+	$(VIVADO) -mode gui -source scripts/run_xilinx_z2_ft232h_nucleo.tcl &
+
+openocd:
+	openocd -f utils/openocd-didactic-ft232h-z2.cfg
+
+load_elf: check_env
+	riscv64-unknown-elf-gdb $(BUILD_DIR)/fpga/sw/$(TEST).elf -x utils/connect-and-load.gdb

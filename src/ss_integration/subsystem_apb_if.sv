@@ -14,6 +14,7 @@ module subsystem_apb_if (
     input  logic [31:0] PADDR,
     input  logic        PENABLE,
     input  logic        PSEL,
+    input  logic [3:0]  PSTRB,
     input  logic [31:0] PWDATA,
     input  logic        PWRITE,
     output logic [31:0] PRDATA,
@@ -25,6 +26,7 @@ module subsystem_apb_if (
 
     output logic [11:0] local_addr_o,
     output logic [31:0] bus_wdata_o,
+    output logic [3:0]  bus_pstrb_o,
     output logic        bus_wena_o,
     output logic        bus_rena_o,
     input  logic [31:0] bus_rdata_i,
@@ -38,6 +40,7 @@ module subsystem_apb_if (
   logic pending_q;
   logic [11:0] local_addr_q;
   logic [31:0] bus_wdata_q;
+  logic [3:0]  bus_pstrb_q;
   logic        bus_wena_q;
   logic        bus_rena_q;
 
@@ -47,6 +50,7 @@ module subsystem_apb_if (
       pending_q    <= 1'b0;
       local_addr_q <= 12'd0;
       bus_wdata_q  <= 32'd0;
+      bus_pstrb_q  <= 4'd0;
       bus_wena_q   <= 1'b0;
       bus_rena_q   <= 1'b0;
     end else begin
@@ -60,6 +64,7 @@ module subsystem_apb_if (
         // stable until bus_ready_i completes the transfer.
         local_addr_q <= PADDR[11:0];
         bus_wdata_q  <= PWDATA;
+        bus_pstrb_q  <= PSTRB;
         bus_wena_q   <= PWRITE;
         bus_rena_q   <= ~PWRITE;
         pending_q    <= 1'b1;
@@ -77,6 +82,7 @@ module subsystem_apb_if (
   // already selected this subsystem, so only PADDR[11:0] is relevant here.
   assign local_addr_o = local_addr_q;
   assign bus_wdata_o  = bus_wdata_q;
+  assign bus_pstrb_o  = bus_pstrb_q;
   assign bus_wena_o   = bus_wena_q;
   assign bus_rena_o   = bus_rena_q;
 

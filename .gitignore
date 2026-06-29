@@ -17,3 +17,7 @@ Bender.lock
 __pycache__
 sim_build
 .venv
+.vscode/
+Ubuntu_Only
+Archives_Unused
+README_JINWOO_SS2_FPGA.md

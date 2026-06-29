@@ -17,6 +17,7 @@
 module subsystem_addr_decoder (
     input  logic [11:0] local_addr_i,
     input  logic [31:0] bus_wdata_i,
+    input  logic [3:0]  bus_pstrb_i,
     input  logic        bus_wena_i,
     input  logic        bus_rena_i,
 
@@ -40,6 +41,7 @@ module subsystem_addr_decoder (
 
   logic access;
   logic word_aligned;
+  logic full_word_write;
   logic in_reg_region;
   logic in_weight_region;
   logic in_act_region;
@@ -55,6 +57,7 @@ module subsystem_addr_decoder (
   //   0x400-0x7FF output read words
   assign access           = bus_wena_i | bus_rena_i;
   assign word_aligned     = (local_addr_i[1:0] == 2'b00);
+  assign full_word_write  = (bus_pstrb_i == 4'b1111);
   assign in_reg_region    = (local_addr_i[11:8] == 4'h0);
   assign in_weight_region = (local_addr_i[11:8] == 4'h1);
   assign in_act_region    = (local_addr_i[11:8] == 4'h2);
@@ -73,8 +76,14 @@ module subsystem_addr_decoder (
     dec_error_code_o = ERR_NONE;
 
     if (access && !word_aligned) begin
-      // The subsystem only implements word-granular APB accesses.  Byte strobes
-      // are intentionally not consumed in this compact version.
+      // The subsystem only implements word-granular APB accesses.
+      dec_err_o        = 1'b1;
+      dec_error_code_o = ERR_UNALIGNED;
+    end
+
+    else if (bus_wena_i && !full_word_write) begin
+      // Partial byte writes are rejected instead of silently updating only a
+      // fraction of a packed command/configuration word.
       dec_err_o        = 1'b1;
       dec_error_code_o = ERR_UNALIGNED;
     end

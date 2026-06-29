@@ -64,9 +64,9 @@ module Didactic #(
     // SystemControl_SS_SS_1_Ctrl_to_i_tum_ss_warpper_SS_Ctrl wires:
     wire [7:0] SystemControl_SS_SS_1_Ctrl_to_i_tum_ss_warpper_SS_Ctrl_clk_ctrl;
     wire       SystemControl_SS_SS_1_Ctrl_to_i_tum_ss_warpper_SS_Ctrl_irq_en;
-    // SystemControl_SS_SS_2_Ctrl_to_i_dtu_ss_wrapper_SS_Ctrl wires:
-    wire [7:0] SystemControl_SS_SS_2_Ctrl_to_i_dtu_ss_wrapper_SS_Ctrl_clk_ctrl;
-    wire       SystemControl_SS_SS_2_Ctrl_to_i_dtu_ss_wrapper_SS_Ctrl_irq_en;
+    // SystemControl_SS_SS_2_Ctrl_to_i_ss2_wrapper_SS_Ctrl wires:
+    wire [7:0] SystemControl_SS_SS_2_Ctrl_to_i_ss2_wrapper_SS_Ctrl_clk_ctrl;
+    wire       SystemControl_SS_SS_2_Ctrl_to_i_ss2_wrapper_SS_Ctrl_irq_en;
     // SystemControl_SS_JTAG_to_JTAG wires:
     // SystemControl_SS_SS_3_Ctrl_to_i_kth_ss_wrapper_SS_Ctrl wires:
     wire [7:0] SystemControl_SS_SS_3_Ctrl_to_i_kth_ss_wrapper_SS_Ctrl_clk_ctrl;
@@ -91,16 +91,16 @@ module Didactic #(
     wire [3:0] i_obi_icn_ss_apb_1_to_i_tum_ss_warpper_APB_PSTRB;
     wire [31:0] i_obi_icn_ss_apb_1_to_i_tum_ss_warpper_APB_PWDATA;
     wire       i_obi_icn_ss_apb_1_to_i_tum_ss_warpper_APB_PWRITE;
-    // i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB wires:
-    wire [31:0] i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PADDR;
-    wire       i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PENABLE;
-    wire [31:0] i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PRDATA;
-    wire       i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PREADY;
-    wire       i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSEL;
-    wire       i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSLVERR;
-    wire [3:0] i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSTRB;
-    wire [31:0] i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PWDATA;
-    wire       i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PWRITE;
+    // i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB wires:
+    wire [31:0] i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PADDR;
+    wire       i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PENABLE;
+    wire [31:0] i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PRDATA;
+    wire       i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PREADY;
+    wire       i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSEL;
+    wire       i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSLVERR;
+    wire [3:0] i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSTRB;
+    wire [31:0] i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PWDATA;
+    wire       i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PWRITE;
     // i_obi_icn_ss_apb_3_to_i_kth_ss_wrapper_APB wires:
     wire [31:0] i_obi_icn_ss_apb_3_to_i_kth_ss_wrapper_APB_PADDR;
     wire       i_obi_icn_ss_apb_3_to_i_kth_ss_wrapper_APB_PENABLE;
@@ -164,10 +164,10 @@ module Didactic #(
     wire [15:0] i_tum_ss_warpper_pmod_gpio_to_SystemControl_SS_ss_1_pmod_gpio_gpi;
     wire [15:0] i_tum_ss_warpper_pmod_gpio_to_SystemControl_SS_ss_1_pmod_gpio_gpio_oe;
     wire [15:0] i_tum_ss_warpper_pmod_gpio_to_SystemControl_SS_ss_1_pmod_gpio_gpo;
-    // i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio wires:
-    wire [15:0] i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpi;
-    wire [15:0] i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpio_oe;
-    wire [15:0] i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpo;
+    // i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio wires:
+    wire [15:0] i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpi;
+    wire [15:0] i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpio_oe;
+    wire [15:0] i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpo;
     // i_kth_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_3_pmod_gpio wires:
     wire [15:0] i_kth_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_3_pmod_gpio_gpi;
     wire [15:0] i_kth_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_3_pmod_gpio_gpio_oe;
@@ -179,8 +179,8 @@ module Didactic #(
     // SystemControl_SS_Clock_to_Clock wires:
 
     // Ad-hoc wires:
-    wire       i_dtu_ss_wrapper_reset_int_to_SystemControl_SS_reset_ss;
-    wire       i_dtu_ss_wrapper_irq_to_SystemControl_SS_irq_i;
+    wire       i_ss2_wrapper_reset_int_to_SystemControl_SS_reset_ss;
+    wire       i_ss2_wrapper_irq_to_SystemControl_SS_irq_i;
     wire       i_imt_ss_wrapper_reset_int_to_SystemControl_SS_reset_ss;
     wire       i_tum_ss_warpper_reset_int_to_SystemControl_SS_reset_ss;
     wire       i_kth_ss_wrapper_reset_int_to_SystemControl_SS_reset_ss;
@@ -267,25 +267,25 @@ module Didactic #(
     wire [15:0] analog_wrapper_0_pmod_gpo;
     wire       analog_wrapper_0_reset_int;
     wire [7:0] analog_wrapper_0_ss_ctrl;
-    // i_dtu_ss_wrapper port wires:
-    wire [31:0] i_dtu_ss_wrapper_PADDR;
-    wire       i_dtu_ss_wrapper_PENABLE;
-    wire [31:0] i_dtu_ss_wrapper_PRDATA;
-    wire       i_dtu_ss_wrapper_PREADY;
-    wire       i_dtu_ss_wrapper_PSEL;
-    wire       i_dtu_ss_wrapper_PSLVERR;
-    wire [3:0] i_dtu_ss_wrapper_PSTRB;
-    wire [31:0] i_dtu_ss_wrapper_PWDATA;
-    wire       i_dtu_ss_wrapper_PWRITE;
-    wire       i_dtu_ss_wrapper_clk;
-    wire       i_dtu_ss_wrapper_high_speed_clk;
-    wire       i_dtu_ss_wrapper_irq;
-    wire       i_dtu_ss_wrapper_irq_en_2;
-    wire [15:0] i_dtu_ss_wrapper_pmod_gpi;
-    wire [15:0] i_dtu_ss_wrapper_pmod_gpio_oe;
-    wire [15:0] i_dtu_ss_wrapper_pmod_gpo;
-    wire       i_dtu_ss_wrapper_reset_int;
-    wire [7:0] i_dtu_ss_wrapper_ss_ctrl_2;
+    // i_ss2_wrapper port wires:
+    wire [31:0] i_ss2_wrapper_PADDR;
+    wire       i_ss2_wrapper_PENABLE;
+    wire [31:0] i_ss2_wrapper_PRDATA;
+    wire       i_ss2_wrapper_PREADY;
+    wire       i_ss2_wrapper_PSEL;
+    wire       i_ss2_wrapper_PSLVERR;
+    wire [3:0] i_ss2_wrapper_PSTRB;
+    wire [31:0] i_ss2_wrapper_PWDATA;
+    wire       i_ss2_wrapper_PWRITE;
+    wire       i_ss2_wrapper_clk;
+    wire       i_ss2_wrapper_high_speed_clk;
+    wire       i_ss2_wrapper_irq;
+    wire       i_ss2_wrapper_irq_en_2;
+    wire [15:0] i_ss2_wrapper_pmod_gpi;
+    wire [15:0] i_ss2_wrapper_pmod_gpio_oe;
+    wire [15:0] i_ss2_wrapper_pmod_gpo;
+    wire       i_ss2_wrapper_reset_int;
+    wire [7:0] i_ss2_wrapper_ss_ctrl_2;
     // i_imt_ss_wrapper port wires:
     wire [31:0] i_imt_ss_wrapper_PADDR;
     wire       i_imt_ss_wrapper_PENABLE;
@@ -426,11 +426,11 @@ module Didactic #(
     assign SystemControl_SS_Clock_int_to_i_imt_ss_wrapper_Clock_clk = SystemControl_SS_clk;
     assign SystemControl_SS_SS_0_Ctrl_to_i_imt_ss_wrapper_SS_Ctrl_irq_en = SystemControl_SS_irq_en_0;
     assign SystemControl_SS_SS_1_Ctrl_to_i_tum_ss_warpper_SS_Ctrl_irq_en = SystemControl_SS_irq_en_1;
-    assign SystemControl_SS_SS_2_Ctrl_to_i_dtu_ss_wrapper_SS_Ctrl_irq_en = SystemControl_SS_irq_en_2;
+    assign SystemControl_SS_SS_2_Ctrl_to_i_ss2_wrapper_SS_Ctrl_irq_en = SystemControl_SS_irq_en_2;
     assign SystemControl_SS_SS_3_Ctrl_to_i_kth_ss_wrapper_SS_Ctrl_irq_en = SystemControl_SS_irq_en_3;
     assign analog_wrapper_0_SS_Ctrl_to_SystemControl_SS_ss_4_ctrl_irq_en = SystemControl_SS_irq_en_4;
     assign SystemControl_SS_irq_i[4] = analog_wrapper_0_irq_to_SystemControl_SS_irq_i;
-    assign SystemControl_SS_irq_i[2] = i_dtu_ss_wrapper_irq_to_SystemControl_SS_irq_i;
+    assign SystemControl_SS_irq_i[2] = i_ss2_wrapper_irq_to_SystemControl_SS_irq_i;
     assign SystemControl_SS_irq_i[0] = i_imt_ss_wrapper_irq_to_SystemControl_SS_irq_i;
     assign SystemControl_SS_irq_i[3] = i_kth_ss_wrapper_irq_to_SystemControl_SS_irq_i;
     assign SystemControl_SS_irq_i[1] = i_tum_ss_warpper_irq_to_SystemControl_SS_irq_i;
@@ -452,7 +452,7 @@ module Didactic #(
     assign SystemControl_SS_OBI_to_i_obi_icn_ss_OBI_we = SystemControl_SS_obi_we;
     assign i_obi_icn_ss_reset_to_SystemControl_SS_Reset_icn_reset = SystemControl_SS_reset_int;
     assign analog_wrapper_0_reset_int_to_SystemControl_SS_reset_ss = SystemControl_SS_reset_ss[4];
-    assign i_dtu_ss_wrapper_reset_int_to_SystemControl_SS_reset_ss = SystemControl_SS_reset_ss[2];
+    assign i_ss2_wrapper_reset_int_to_SystemControl_SS_reset_ss = SystemControl_SS_reset_ss[2];
     assign i_imt_ss_wrapper_reset_int_to_SystemControl_SS_reset_ss = SystemControl_SS_reset_ss[0];
     assign i_kth_ss_wrapper_reset_int_to_SystemControl_SS_reset_ss = SystemControl_SS_reset_ss[3];
     assign i_tum_ss_warpper_reset_int_to_SystemControl_SS_reset_ss = SystemControl_SS_reset_ss[1];
@@ -462,9 +462,9 @@ module Didactic #(
     assign i_tum_ss_warpper_pmod_gpio_to_SystemControl_SS_ss_1_pmod_gpio_gpi = SystemControl_SS_ss_1_pmod_gpi;
     assign SystemControl_SS_ss_1_pmod_gpio_oe = i_tum_ss_warpper_pmod_gpio_to_SystemControl_SS_ss_1_pmod_gpio_gpio_oe;
     assign SystemControl_SS_ss_1_pmod_gpo = i_tum_ss_warpper_pmod_gpio_to_SystemControl_SS_ss_1_pmod_gpio_gpo;
-    assign i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpi = SystemControl_SS_ss_2_pmod_gpi;
-    assign SystemControl_SS_ss_2_pmod_gpio_oe = i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpio_oe;
-    assign SystemControl_SS_ss_2_pmod_gpo = i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpo;
+    assign i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpi = SystemControl_SS_ss_2_pmod_gpi;
+    assign SystemControl_SS_ss_2_pmod_gpio_oe = i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpio_oe;
+    assign SystemControl_SS_ss_2_pmod_gpo = i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpo;
     assign i_kth_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_3_pmod_gpio_gpi = SystemControl_SS_ss_3_pmod_gpi;
     assign SystemControl_SS_ss_3_pmod_gpio_oe = i_kth_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_3_pmod_gpio_gpio_oe;
     assign SystemControl_SS_ss_3_pmod_gpo = i_kth_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_3_pmod_gpio_gpo;
@@ -473,7 +473,7 @@ module Didactic #(
     assign SystemControl_SS_ss_4_pmod_gpo = SystemControl_SS_ss_4_pmod_gpio_to_analog_wrapper_0_digital_gpio_gpo;
     assign SystemControl_SS_SS_0_Ctrl_to_i_imt_ss_wrapper_SS_Ctrl_clk_ctrl = SystemControl_SS_ss_ctrl_0;
     assign SystemControl_SS_SS_1_Ctrl_to_i_tum_ss_warpper_SS_Ctrl_clk_ctrl = SystemControl_SS_ss_ctrl_1;
-    assign SystemControl_SS_SS_2_Ctrl_to_i_dtu_ss_wrapper_SS_Ctrl_clk_ctrl = SystemControl_SS_ss_ctrl_2;
+    assign SystemControl_SS_SS_2_Ctrl_to_i_ss2_wrapper_SS_Ctrl_clk_ctrl = SystemControl_SS_ss_ctrl_2;
     assign SystemControl_SS_SS_3_Ctrl_to_i_kth_ss_wrapper_SS_Ctrl_clk_ctrl = SystemControl_SS_ss_ctrl_3;
     assign analog_wrapper_0_SS_Ctrl_to_SystemControl_SS_ss_4_ctrl_clk_ctrl = SystemControl_SS_ss_ctrl_4;
     assign SystemControl_SS_ICN_SS_Ctrl_to_i_obi_icn_ss_icn_ss_ctrl_clk_ctrl = SystemControl_SS_ss_ctrl_icn;
@@ -496,25 +496,25 @@ module Didactic #(
     assign SystemControl_SS_ss_4_pmod_gpio_to_analog_wrapper_0_digital_gpio_gpo = analog_wrapper_0_pmod_gpo;
     assign analog_wrapper_0_reset_int = analog_wrapper_0_reset_int_to_SystemControl_SS_reset_ss;
     assign analog_wrapper_0_ss_ctrl = analog_wrapper_0_SS_Ctrl_to_SystemControl_SS_ss_4_ctrl_clk_ctrl;
-    // i_dtu_ss_wrapper assignments:
-    assign i_dtu_ss_wrapper_PADDR = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PADDR;
-    assign i_dtu_ss_wrapper_PENABLE = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PENABLE;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PRDATA = i_dtu_ss_wrapper_PRDATA;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PREADY = i_dtu_ss_wrapper_PREADY;
-    assign i_dtu_ss_wrapper_PSEL = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSEL;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSLVERR = i_dtu_ss_wrapper_PSLVERR;
-    assign i_dtu_ss_wrapper_PSTRB = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSTRB;
-    assign i_dtu_ss_wrapper_PWDATA = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PWDATA;
-    assign i_dtu_ss_wrapper_PWRITE = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PWRITE;
-    assign i_dtu_ss_wrapper_clk = SystemControl_SS_Clock_int_to_i_imt_ss_wrapper_Clock_clk;
-    assign i_dtu_ss_wrapper_high_speed_clk = 0;
-    assign i_dtu_ss_wrapper_irq_to_SystemControl_SS_irq_i = i_dtu_ss_wrapper_irq;
-    assign i_dtu_ss_wrapper_irq_en_2 = SystemControl_SS_SS_2_Ctrl_to_i_dtu_ss_wrapper_SS_Ctrl_irq_en;
-    assign i_dtu_ss_wrapper_pmod_gpi = i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpi;
-    assign i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpio_oe = i_dtu_ss_wrapper_pmod_gpio_oe;
-    assign i_dtu_ss_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpo = i_dtu_ss_wrapper_pmod_gpo;
-    assign i_dtu_ss_wrapper_reset_int = i_dtu_ss_wrapper_reset_int_to_SystemControl_SS_reset_ss;
-    assign i_dtu_ss_wrapper_ss_ctrl_2 = SystemControl_SS_SS_2_Ctrl_to_i_dtu_ss_wrapper_SS_Ctrl_clk_ctrl;
+    // i_ss2_wrapper assignments:
+    assign i_ss2_wrapper_PADDR = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PADDR;
+    assign i_ss2_wrapper_PENABLE = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PENABLE;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PRDATA = i_ss2_wrapper_PRDATA;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PREADY = i_ss2_wrapper_PREADY;
+    assign i_ss2_wrapper_PSEL = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSEL;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSLVERR = i_ss2_wrapper_PSLVERR;
+    assign i_ss2_wrapper_PSTRB = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSTRB;
+    assign i_ss2_wrapper_PWDATA = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PWDATA;
+    assign i_ss2_wrapper_PWRITE = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PWRITE;
+    assign i_ss2_wrapper_clk = SystemControl_SS_Clock_int_to_i_imt_ss_wrapper_Clock_clk;
+    assign i_ss2_wrapper_high_speed_clk = 0;
+    assign i_ss2_wrapper_irq_to_SystemControl_SS_irq_i = i_ss2_wrapper_irq;
+    assign i_ss2_wrapper_irq_en_2 = SystemControl_SS_SS_2_Ctrl_to_i_ss2_wrapper_SS_Ctrl_irq_en;
+    assign i_ss2_wrapper_pmod_gpi = i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpi;
+    assign i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpio_oe = i_ss2_wrapper_pmod_gpio_oe;
+    assign i_ss2_wrapper_pmod_gpio_to_SystemControl_SS_ss_2_pmod_gpio_gpo = i_ss2_wrapper_pmod_gpo;
+    assign i_ss2_wrapper_reset_int = i_ss2_wrapper_reset_int_to_SystemControl_SS_reset_ss;
+    assign i_ss2_wrapper_ss_ctrl_2 = SystemControl_SS_SS_2_Ctrl_to_i_ss2_wrapper_SS_Ctrl_clk_ctrl;
     // i_imt_ss_wrapper assignments:
     assign i_imt_ss_wrapper_PADDR = i_obi_icn_ss_apb_0_to_i_imt_ss_wrapper_APB_PADDR;
     assign i_imt_ss_wrapper_PENABLE = i_obi_icn_ss_apb_0_to_i_imt_ss_wrapper_APB_PENABLE;
@@ -572,15 +572,15 @@ module Didactic #(
     assign i_obi_icn_ss_apb_1_to_i_tum_ss_warpper_APB_PSTRB = i_obi_icn_ss_APB_1_PSTRB;
     assign i_obi_icn_ss_apb_1_to_i_tum_ss_warpper_APB_PWDATA = i_obi_icn_ss_APB_1_PWDATA;
     assign i_obi_icn_ss_apb_1_to_i_tum_ss_warpper_APB_PWRITE = i_obi_icn_ss_APB_1_PWRITE;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PADDR = i_obi_icn_ss_APB_2_PADDR;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PENABLE = i_obi_icn_ss_APB_2_PENABLE;
-    assign i_obi_icn_ss_APB_2_PRDATA = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PRDATA;
-    assign i_obi_icn_ss_APB_2_PREADY = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PREADY;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSEL = i_obi_icn_ss_APB_2_PSEL;
-    assign i_obi_icn_ss_APB_2_PSLVERR = i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSLVERR;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PSTRB = i_obi_icn_ss_APB_2_PSTRB;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PWDATA = i_obi_icn_ss_APB_2_PWDATA;
-    assign i_obi_icn_ss_apb_2_to_i_dtu_ss_wrapper_APB_PWRITE = i_obi_icn_ss_APB_2_PWRITE;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PADDR = i_obi_icn_ss_APB_2_PADDR;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PENABLE = i_obi_icn_ss_APB_2_PENABLE;
+    assign i_obi_icn_ss_APB_2_PRDATA = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PRDATA;
+    assign i_obi_icn_ss_APB_2_PREADY = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PREADY;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSEL = i_obi_icn_ss_APB_2_PSEL;
+    assign i_obi_icn_ss_APB_2_PSLVERR = i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSLVERR;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PSTRB = i_obi_icn_ss_APB_2_PSTRB;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PWDATA = i_obi_icn_ss_APB_2_PWDATA;
+    assign i_obi_icn_ss_apb_2_to_i_ss2_wrapper_APB_PWRITE = i_obi_icn_ss_APB_2_PWRITE;
     assign i_obi_icn_ss_apb_3_to_i_kth_ss_wrapper_APB_PADDR = i_obi_icn_ss_APB_3_PADDR;
     assign i_obi_icn_ss_apb_3_to_i_kth_ss_wrapper_APB_PENABLE = i_obi_icn_ss_APB_3_PENABLE;
     assign i_obi_icn_ss_APB_3_PRDATA = i_obi_icn_ss_apb_3_to_i_kth_ss_wrapper_APB_PRDATA;
@@ -762,36 +762,36 @@ module Didactic #(
         // Interface: high_speed_clk
         .high_speed_clk      (analog_wrapper_0_high_speed_clk));
 
-    // IP-XACT VLNV: tuni.fi:subsystem.wrapper:dtu_wrapper:1.0
-    dtu_wrapper_0 #(
+    // IP-XACT VLNV: tuni.fi:subsystem.wrapper:ss2_wrapper:1.0
+    ss2_wrapper_0 #(
         .APB_AW              (32),
         .APB_DW              (32))
-    i_dtu_ss_wrapper(
+    i_ss2_wrapper(
         // Interface: APB
-        .PADDR               (i_dtu_ss_wrapper_PADDR),
-        .PENABLE             (i_dtu_ss_wrapper_PENABLE),
-        .PSEL                (i_dtu_ss_wrapper_PSEL),
-        .PSTRB               (i_dtu_ss_wrapper_PSTRB),
-        .PWDATA              (i_dtu_ss_wrapper_PWDATA),
-        .PWRITE              (i_dtu_ss_wrapper_PWRITE),
-        .PRDATA              (i_dtu_ss_wrapper_PRDATA),
-        .PREADY              (i_dtu_ss_wrapper_PREADY),
-        .PSLVERR             (i_dtu_ss_wrapper_PSLVERR),
+        .PADDR               (i_ss2_wrapper_PADDR),
+        .PENABLE             (i_ss2_wrapper_PENABLE),
+        .PSEL                (i_ss2_wrapper_PSEL),
+        .PSTRB               (i_ss2_wrapper_PSTRB),
+        .PWDATA              (i_ss2_wrapper_PWDATA),
+        .PWRITE              (i_ss2_wrapper_PWRITE),
+        .PRDATA              (i_ss2_wrapper_PRDATA),
+        .PREADY              (i_ss2_wrapper_PREADY),
+        .PSLVERR             (i_ss2_wrapper_PSLVERR),
         // Interface: Clock
-        .clk                 (i_dtu_ss_wrapper_clk),
+        .clk                 (i_ss2_wrapper_clk),
         // Interface: IRQ
-        .irq                 (i_dtu_ss_wrapper_irq),
+        .irq                 (i_ss2_wrapper_irq),
         // Interface: Reset
-        .reset_int           (i_dtu_ss_wrapper_reset_int),
+        .reset_int           (i_ss2_wrapper_reset_int),
         // Interface: SS_Ctrl
-        .irq_en_2            (i_dtu_ss_wrapper_irq_en_2),
-        .ss_ctrl_2           (i_dtu_ss_wrapper_ss_ctrl_2),
+        .irq_en_2            (i_ss2_wrapper_irq_en_2),
+        .ss_ctrl_2           (i_ss2_wrapper_ss_ctrl_2),
         // Interface: high_speed_clk
-        .high_speed_clk      (i_dtu_ss_wrapper_high_speed_clk),
+        .high_speed_clk      (i_ss2_wrapper_high_speed_clk),
         // Interface: pmod_gpio
-        .pmod_gpi            (i_dtu_ss_wrapper_pmod_gpi),
-        .pmod_gpio_oe        (i_dtu_ss_wrapper_pmod_gpio_oe),
-        .pmod_gpo            (i_dtu_ss_wrapper_pmod_gpo));
+        .pmod_gpi            (i_ss2_wrapper_pmod_gpi),
+        .pmod_gpio_oe        (i_ss2_wrapper_pmod_gpio_oe),
+        .pmod_gpo            (i_ss2_wrapper_pmod_gpo));
 
     // IP-XACT VLNV: tuni.fi:subsystem.wrapper:imt_wrapper:1.0
     imt_wrapper_0 #(

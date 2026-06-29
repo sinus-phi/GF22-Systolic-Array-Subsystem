@@ -1,0 +1,47 @@
+######################################
+# Didactic SoC
+# Local PYNQ-Z2 + FT232H + Nucleo FPGA flow using general IO headers.
+#
+# This makefile is intentionally separate from fpga/Makefile and from the
+# PMOD-based Z2 makefile.
+######################################
+
+SHELL = bash
+VIVADO ?= vivado
+
+TEST ?= blinky
+NUCLEO_BRIDGE_DIR ?= nucleo_uart_bridge
+UART_DEV ?= /dev/ttyACM0
+
+export BUILD_DIR ?= ../build
+
+check_env:
+	mkdir -p $(BUILD_DIR)
+
+all_xilinx: check_env
+	$(VIVADO) -mode batch -notrace -source scripts/run_xilinx_z2_course_io_ft232h_nucleo.tcl
+
+all_xilinx_gui: check_env
+	$(VIVADO) -mode gui -source scripts/run_xilinx_z2_course_io_ft232h_nucleo.tcl &
+
+openocd:
+	openocd -f utils/openocd-didactic-ft232h-z2.cfg
+
+load_elf: check_env
+	riscv64-unknown-elf-gdb $(BUILD_DIR)/fpga/sw/$(TEST).elf -x utils/connect-and-load.gdb
+
+nucleo_bridge:
+	$(MAKE) -C $(NUCLEO_BRIDGE_DIR) BUILD_DIR=../../build/nucleo_uart_bridge
+
+flash_nucleo_bridge:
+	$(MAKE) -C $(NUCLEO_BRIDGE_DIR) BUILD_DIR=../../build/nucleo_uart_bridge flash
+
+uart_monitor:
+	stty -F $(UART_DEV) 9600 cs8 -cstopb -parenb -ixon -ixoff -crtscts raw -echo
+	cat -v $(UART_DEV)
+
+gemm_cpu_bringup:
+	./scripts/run_z2_gemm_cpu_bringup.sh
+
+ss2_hw_workflow:
+	./scripts/run_z2_ss2_hw_workflow.sh

@@ -1,5 +1,9 @@
 # Didactic SoC
 
+## Jinwoo SS2 FPGA branch
+
+For the current PYNQ-Z2 + FT232H + Nucleo-F411RE workflow with SS2 subsystem integration, environment setup, synthesis, FPGA programming, JTAG ELF loading, and hardware test commands, see [README_JINWOO_SS2_FPGA_EN.md](README_JINWOO_SS2_FPGA_EN.md).
+
 This is the common chip template for the Edu4chip project. It is created with IP-XACT modeling using the Kactus2 tool. Source files are reused from both open source and previous projects. This project is licensed under the terms of the Solderpad Hardware License v2.1.
 
 See Doc Folder for more extensive documentation and guides as well as contribution guidelines (some of which are yet to be written).
@@ -75,4 +79,3 @@ Verification: Contains experimental verilator setup and verification PyUVM platf
 ## What is excluded from repository
 
 * tool outputs: tools should create build folder for their output. None of this folder content should be part of the git repository. IF need be, provide documentation how to run tools to get the same output.
-

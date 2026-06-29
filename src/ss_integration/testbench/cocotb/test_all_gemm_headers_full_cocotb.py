@@ -399,6 +399,7 @@ class ApbMaster:
         self.dut.PADDR.value = 0
         self.dut.PENABLE.value = 0
         self.dut.PSEL.value = 0
+        self.dut.PSTRB.value = 0
         self.dut.PWDATA.value = 0
         self.dut.PWRITE.value = 0
         self.dut.irq_en_i.value = 1
@@ -411,7 +412,7 @@ class ApbMaster:
         for _ in range(2):
             await RisingEdge(self.dut.clk_i)
 
-    async def write(self, addr: int, data: int, expect_error: bool = False):
+    async def write(self, addr: int, data: int, expect_error: bool = False, pstrb: int = 0xF):
         start_cycle = self.perf.cycle
         addr_class = _classify_apb_addr(addr)
         self.perf.apb_writes += 1
@@ -426,6 +427,7 @@ class ApbMaster:
 
         self.dut.PADDR.value = addr
         self.dut.PWDATA.value = data & 0xFFFF_FFFF
+        self.dut.PSTRB.value = pstrb & 0xF
         self.dut.PWRITE.value = 1
         self.dut.PSEL.value = 1
         self.dut.PENABLE.value = 0
@@ -443,6 +445,7 @@ class ApbMaster:
                 self.dut.PSEL.value = 0
                 self.dut.PENABLE.value = 0
                 self.dut.PWRITE.value = 0
+                self.dut.PSTRB.value = 0
                 self.dut.PWDATA.value = 0
                 await RisingEdge(self.dut.clk_i)
                 elapsed = self.perf.cycle - start_cycle
@@ -463,6 +466,7 @@ class ApbMaster:
             self.perf.output_reads += 1
 
         self.dut.PADDR.value = addr
+        self.dut.PSTRB.value = 0
         self.dut.PWRITE.value = 0
         self.dut.PSEL.value = 1
         self.dut.PENABLE.value = 0
@@ -479,6 +483,7 @@ class ApbMaster:
                 data = int(self.dut.PRDATA.value) & 0xFFFF_FFFF
                 self.dut.PSEL.value = 0
                 self.dut.PENABLE.value = 0
+                self.dut.PSTRB.value = 0
                 await RisingEdge(self.dut.clk_i)
                 elapsed = self.perf.cycle - start_cycle
                 self.perf.apb_access_cycles += elapsed

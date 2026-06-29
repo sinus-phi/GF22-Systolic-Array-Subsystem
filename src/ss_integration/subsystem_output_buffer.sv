@@ -47,15 +47,19 @@ module subsystem_output_buffer #(
       ROW_INDEX_WIDTH + LANE_INDEX_WIDTH + ACC_WORD_INDEX_WIDTH;
   localparam logic [BUFF_ADDR_WIDTH-1:0] ROW_ADDR_STRIDE = ROW_BYTES;
 
-  // In FPGA synthesis this should infer distributed/register memory for small
-  // arrays or can later be replaced by a BRAM/SRAM macro wrapper without
-  // changing the firmware-visible output window.
-  logic [ROW_DATA_WIDTH-1:0] row_mem_q [0:ARRAY_HEIGHT-1];
+  // Keep the physical output rows in a reset-less synchronous memory.  Vivado
+  // can map this style to BRAM, while an async reset on the memory array tends
+  // to force thousands of flip-flops instead.
+  (* ram_style = "block" *) logic [ROW_DATA_WIDTH-1:0] row_mem_q [0:ARRAY_HEIGHT-1];
+  logic [ROW_DATA_WIDTH-1:0] row_rd_data_q;
 
   logic [ROW_INDEX_WIDTH-1:0]      wr_row_idx;
   logic [ROW_INDEX_WIDTH-1:0]      rd_row_idx;
   logic [LANE_INDEX_WIDTH-1:0]     rd_lane_idx;
   logic [ACC_WORD_INDEX_WIDTH-1:0] rd_acc_word_idx;
+  logic [LANE_INDEX_WIDTH-1:0]     rd_lane_idx_q;
+  logic [ACC_WORD_INDEX_WIDTH-1:0] rd_acc_word_idx_q;
+  logic                            rd_pipe_q;
 
   function automatic logic [ROW_INDEX_WIDTH-1:0] decode_write_row_index(
       input logic [BUFF_ADDR_WIDTH-1:0] wr_addr
@@ -139,27 +143,45 @@ module subsystem_output_buffer #(
   assign {rd_row_idx, rd_lane_idx, rd_acc_word_idx} =
       decode_compact_index(rd_word_idx_i, tile_n_i[3:0]);
 
+  always_ff @(posedge clk_i) begin
+    if (wr_en_i) begin
+      // Whole-row write: all physical output lanes are captured together.
+      row_mem_q[wr_row_idx] <= wr_data_i;
+    end
+
+    if (rd_req_i) begin
+      // Synchronous row read.  The 32-bit word selection happens one cycle
+      // later from row_rd_data_q, matching FPGA BRAM read semantics.
+      row_rd_data_q <= row_mem_q[rd_row_idx];
+    end
+  end
+
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       rd_data_o      <= 32'd0;
       rd_valid_o     <= 1'b0;
+      rd_lane_idx_q  <= '0;
+      rd_acc_word_idx_q <= '0;
+      rd_pipe_q      <= 1'b0;
     end else begin
       if (clear_i) begin
-        rd_data_o  <= 32'd0;
-        rd_valid_o <= 1'b0;
+        rd_data_o         <= 32'd0;
+        rd_valid_o        <= 1'b0;
+        rd_lane_idx_q     <= '0;
+        rd_acc_word_idx_q <= '0;
+        rd_pipe_q         <= 1'b0;
       end else begin
-        rd_valid_o <= rd_req_i;
+        rd_valid_o <= rd_pipe_q;
 
-        if (wr_en_i) begin
-          // Whole-row write: all physical output lanes are captured together.
-          row_mem_q[wr_row_idx] <= wr_data_i;
+        if (rd_pipe_q) begin
+          rd_data_o <= row_rd_data_q[
+              (rd_lane_idx_q * ACC_WIDTH) + (rd_acc_word_idx_q * 32) +: 32];
         end
 
+        rd_pipe_q <= rd_req_i;
         if (rd_req_i) begin
-          // Synchronous read response.  subsystem_topmodule holds APB PREADY
-          // low until rd_valid_o returns with this registered word.
-          rd_data_o <= row_mem_q[rd_row_idx][
-              (rd_lane_idx * ACC_WIDTH) + (rd_acc_word_idx * 32) +: 32];
+          rd_lane_idx_q     <= rd_lane_idx;
+          rd_acc_word_idx_q <= rd_acc_word_idx;
         end
       end
     end

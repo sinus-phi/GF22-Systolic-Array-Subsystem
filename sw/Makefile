@@ -10,7 +10,7 @@ TESTCASE ?= blink
 START_TIME=`date +%F_%H:%M`
 SHELL = bash
 BUILD_DIR ?= ../build
-XLEN ?= 32
+XLEN ?= 64
 PREFIX ?= riscv$(XLEN)-unknown-elf
 ARCH_FLAGS ?= -march=rv32imc -mabi=ilp32
 CC=$(PREFIX)-gcc

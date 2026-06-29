@@ -20,6 +20,7 @@ module student_ss_2(
     input  logic [31:0] PADDR,
     input  logic        PENABLE,
     input  logic        PSEL,
+    input  logic [3:0]  PSTRB,
     input  logic [31:0] PWDATA,
     input  logic        PWRITE,
     output logic [31:0] PRDATA,
@@ -50,14 +51,26 @@ module student_ss_2(
 
 // WARNING: EVERYTHING ON AND ABOVE THIS LINE MAY BE OVERWRITTEN BY KACTUS2!!!
 
-// this file contains minimal functionality to avoid breaking anything in other ends of the chip.
+  subsystem_topmodule i_subsystem_topmodule (
+    .PADDR         (PADDR),
+    .PENABLE       (PENABLE),
+    .PSEL          (PSEL),
+    .PSTRB         (PSTRB),
+    .PWDATA        (PWDATA),
+    .PWRITE        (PWRITE),
+    .PRDATA        (PRDATA),
+    .PREADY        (PREADY),
+    .PSLVERR       (PSLVERR),
+    .clk_i         (clk_in),
+    .rst_ni        (reset_int),
+    .irq_en_i      (irq_en_2),
+    .ss_ctrl_i     (ss_ctrl_2),
+    .pmod_gpi      (pmod_gpi),
+    .irq_o         (irq_2),
+    .pmod_gpo      (pmod_gpo),
+    .pmod_gpio_oe  (pmod_gpio_oe)
+  );
 
-  assign PSLVERR = 'd0;
-  assign PREADY  = 'd0;
-  assign PRDATA  = 'd0;
-  assign irq_2   = 'd0;
-
-  assign pmod_gpo     = 'h0;
-  assign pmod_gpio_oe = 'h0;
+  wire _unused_student_ss_2 = &{1'b0, high_speed_clk, 1'b0};
 
 endmodule

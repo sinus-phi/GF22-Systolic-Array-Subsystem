@@ -308,6 +308,7 @@ class ApbMaster:
         self.dut.PADDR.value = 0
         self.dut.PENABLE.value = 0
         self.dut.PSEL.value = 0
+        self.dut.PSTRB.value = 0
         self.dut.PWDATA.value = 0
         self.dut.PWRITE.value = 0
         self.dut.irq_en_i.value = 1
@@ -320,9 +321,10 @@ class ApbMaster:
         for _ in range(2):
             await RisingEdge(self.dut.clk_i)
 
-    async def write(self, addr: int, data: int, expect_error: bool = False):
+    async def write(self, addr: int, data: int, expect_error: bool = False, pstrb: int = 0xF):
         self.dut.PADDR.value = addr
         self.dut.PWDATA.value = data & 0xFFFF_FFFF
+        self.dut.PSTRB.value = pstrb & 0xF
         self.dut.PWRITE.value = 1
         self.dut.PSEL.value = 1
         self.dut.PENABLE.value = 0
@@ -340,6 +342,7 @@ class ApbMaster:
                 self.dut.PSEL.value = 0
                 self.dut.PENABLE.value = 0
                 self.dut.PWRITE.value = 0
+                self.dut.PSTRB.value = 0
                 self.dut.PWDATA.value = 0
                 await RisingEdge(self.dut.clk_i)
                 return
@@ -348,6 +351,7 @@ class ApbMaster:
 
     async def read(self, addr: int, expect_error: bool = False) -> int:
         self.dut.PADDR.value = addr
+        self.dut.PSTRB.value = 0
         self.dut.PWRITE.value = 0
         self.dut.PSEL.value = 1
         self.dut.PENABLE.value = 0
@@ -364,6 +368,7 @@ class ApbMaster:
                 data = int(self.dut.PRDATA.value) & 0xFFFF_FFFF
                 self.dut.PSEL.value = 0
                 self.dut.PENABLE.value = 0
+                self.dut.PSTRB.value = 0
                 await RisingEdge(self.dut.clk_i)
                 return data
             await RisingEdge(self.dut.clk_i)
@@ -963,6 +968,27 @@ async def test_invalid_sequence_protection(dut):
     status = await bus.status()
     log_check(dut, case_name, "invalid_config_phase", PH_IDLE, status_phase(status))
     log_check(dut, case_name, "invalid_config_error_sticky", True, status_error(status))
+    log_case(dut, case_name)
+
+
+@cocotb.test()
+async def test_partial_pstrb_write_is_rejected(dut):
+    """Firmware must use full 32-bit APB writes for packed command words."""
+    bus = await start_clock_and_reset(dut)
+    case_name = "partial_pstrb_write_rejected"
+
+    good_cfg = make_cfg(DTYPE_INT4, DTYPE_INT4, 1, 1, 1, 1)
+    await bus.write(OFF_CONFIG, good_cfg, expect_error=True, pstrb=0x1)
+
+    status = await bus.status()
+    log_check(dut, case_name, "phase_after_partial_write", PH_IDLE, status_phase(status))
+    log_check(dut, case_name, "error_sticky_after_partial_write", True, status_error(status))
+    error_code = await bus.read(OFF_ERROR_CODE)
+    log_check(dut, case_name, "partial_write_error_code", 2, error_code)
+
+    await bus.write(OFF_CONTROL, CTRL_CLEAR_ERROR | CTRL_SOFT_RESET)
+    status = await bus.wait_phase(PH_IDLE)
+    log_check(dut, case_name, "error_clear_after_partial_write", False, status_error(status))
     log_case(dut, case_name)
 
 
