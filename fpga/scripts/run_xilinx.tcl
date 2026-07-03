@@ -32,7 +32,7 @@ if { $PROJECT eq "z1" } {
 
 set DIR [exec pwd]
 
-create_project didactic-$PROJECT ../build/fpga/$PROJECT -force -part $XILINX_PART
+create_project didactic-$PROJECT $BUILD_DIR/fpga/$PROJECT -force -part $XILINX_PART
 set_property XPM_LIBRARIES XPM_MEMORY [current_project]
 
 # add include paths of RTL
