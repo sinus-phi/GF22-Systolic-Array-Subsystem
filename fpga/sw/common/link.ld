@@ -48,8 +48,13 @@ SECTIONS
 
   .bss (NOLOAD) :
   {
+    . = ALIGN(4);
+    __bss_start = .;
+    *(.sbss*)
     *(.bss*)
     *(COMMON)
+    . = ALIGN(4);
+    __bss_end = .;
   } > DMEM
  
   .stack (NOLOAD) : 

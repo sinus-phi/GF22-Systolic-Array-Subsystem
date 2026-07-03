@@ -1,4 +1,8 @@
-set bitstream_path [file normalize [file join [pwd] "../build/fpga/z2_course_io_ft232h_nucleo/didactic-z2_course_io_ft232h_nucleo.runs/impl_1/DidacticZ2_FT232H_Nucleo.bit"]]
+if {[info exists ::env(BITSTREAM_PATH)]} {
+  set bitstream_path [file normalize $::env(BITSTREAM_PATH)]
+} else {
+  set bitstream_path [file normalize [file join [pwd] "../build/fpga/z2_course_io_ft232h_nucleo/didactic-z2_course_io_ft232h_nucleo.runs/impl_1/DidacticZ2_FT232H_Nucleo.bit"]]
+}
 
 if {![file exists $bitstream_path]} {
   error "Bitstream not found: $bitstream_path"

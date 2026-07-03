@@ -30,39 +30,36 @@ void uart_init(){
   volatile uint32_t temp =   *( volatile uint32_t* )(0x01400028);
   *( volatile uint32_t* )(0x01400028) = (temp | 3u);
 
+  const uint32_t sys_clk_hz = 25000000u;
+  const uint32_t baud = 9600u;
+  const uint32_t divisor = (sys_clk_hz + (baud * 8u)) / (baud * 16u);
 
   // init uart settings (for typical tx/rx setup)
-  IIR_FCR = 1u;
-  LCR = (1u<<7 | 3u);
-  RBR_THR_DLL = 27u;//divisor to define baudrate: ~230400 = (frequency, 100MHz)/(16*RBR_THR_DLL)
-  LCR = 3u;
-  IER_DLM = 1u;// enable transmitter holding register empty interrupt
-  IIR_FCR = 2u; // receiver fifo reset
+  IIR_FCR = 0x00u;
+  LCR = 0x80u;
+  RBR_THR_DLL = divisor & 0xffu;
+  IER_DLM = (divisor >> 8) & 0xffu;
+  LCR = 0x03u;
+  IIR_FCR = 0xc7u;
+  MCR = 0x20u;
 
+}
+
+int is_transmit_empty()
+{
+  return LSR & 0x20u;
+}
+
+void write_serial(char a)
+{
+  while (!is_transmit_empty()) {
+  }
+  RBR_THR_DLL = (uint32_t)a;
 }
 
 void uart_print(const char str[]){
   for (int i = 0; str[i] != '\0'; i++) {
-
-    RBR_THR_DLL = str[i];
-
-    // best: IRQ based
-    // TBD
-
-    // better: poll when char has been sent
-    //    volatile int temp = LSR;
-    //    while(temp != 0){
-    //      temp = LSR;
-    //
-    //    }
-    //  }
-
-    // basic: manually nop until time has passed
-    volatile uint32_t wait_loop=0;
-    while(wait_loop<500){
-      asm("nop");
-      wait_loop++;
-    }
+    write_serial(str[i]);
   }
 }
 

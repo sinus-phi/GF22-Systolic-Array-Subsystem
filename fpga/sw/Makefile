@@ -11,10 +11,10 @@ SHELL = bash
 BUILD_DIR ?= ../../build/fpga
 XLEN ?= 64
 PREFIX ?= riscv$(XLEN)-unknown-elf
-ARCH_FLAGS ?= -march=rv32imc -mabi=ilp32
+ARCH_FLAGS ?= -march=rv32imc_zicsr -mabi=ilp32
 CC = $(PREFIX)-gcc
 OPT ?= -O2
-CFLAGS=$(OPT) -g -ffunction-sections -fdata-sections -Icommon/
+CFLAGS=$(OPT) -g -ffunction-sections -fdata-sections -Icommon/ -I$(TESTCASE)/include/
 LDFLAGS ?= -Wl,--build-id=none
 ELF2HEX_BIN ?= riscv32-unknown-elf-elf2hex
 
