@@ -35,6 +35,12 @@ z2_course_io_ft232h_nucleo: all_xilinx
 z2_course_io_ft232h_nucleo_gui: PROJECT=z2_course_io_ft232h_nucleo
 z2_course_io_ft232h_nucleo_gui: all_xilinx_gui
 
+z2_course_io_ft232h_nucleo_group2: PROJECT=z2_course_io_ft232h_nucleo_group2
+z2_course_io_ft232h_nucleo_group2: all_xilinx
+
+z2_course_io_ft232h_nucleo_group2_gui: PROJECT=z2_course_io_ft232h_nucleo_group2
+z2_course_io_ft232h_nucleo_group2_gui: all_xilinx_gui
+
 load_elf: check_env
 	$(GDB) $(BUILD_DIR)/fpga/sw/$(TEST).elf -x ../fpga/utils/connect-and-load.gdb
 

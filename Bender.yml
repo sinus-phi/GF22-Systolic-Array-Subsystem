@@ -80,7 +80,7 @@ sources:
     - src/rtl/obi_cut_intf.sv
     - src/generated/obi_icn_ss.sv
     - src/rtl/peripherals_obi_to_apb.sv
-    
+
   - target: rtl
     files:
     - src/rtl/generic_cells.sv
@@ -91,6 +91,11 @@ sources:
     - src/rtl/pmod_mux.sv
     - src/generated/Didactic.v
     - src/generated/analog_wrapper_0.v
+    - src/generated/SysCtrl_SS_0.v
+    - src/generated/SysCtrl_SS_wrapper_0.v
+
+  - target: all(rtl, not(subsystem_group2_fpga))
+    files:
     - src/generated/student_wrapper_0.v
     - src/generated/student_wrapper_1.v
     - src/generated/student_wrapper_2.v
@@ -98,8 +103,6 @@ sources:
     - src/generated/student_wrapper_4.v
     - src/generated/student_wrapper_5.v
     - src/generated/student_wrapper_6.v
-    - src/generated/SysCtrl_SS_0.v
-    - src/generated/SysCtrl_SS_wrapper_0.v    
 
   - target: not(synthesis)
     files:
@@ -112,13 +115,27 @@ sources:
     - src/tb/spi/if_spi_slave.sv
     - src/tb/jtag/jtag_pkg.sv
     - src/tb/tb_didactic.sv
-  
-  - target: all(rtl, not(black_box))
-    files: 
+
+  - target: all(rtl, not(black_box), not(subsystem_group2_fpga))
+    files:
     - src/generated/subsystem.v
 
+  - target: all(rtl, subsystem_group2_fpga)
+    files:
+    - src/subsystem_group2/rtl/group2_pkg.sv
+    - src/subsystem_group2/rtl/group2_apb_if.sv
+    - src/subsystem_group2/rtl/group2_addr_decoder.sv
+    - src/subsystem_group2/rtl/group2_regbank.sv
+    - src/subsystem_group2/rtl/group2_sa_ctrl.sv
+    - src/subsystem_group2/rtl/group2_input_frontend.sv
+    - src/subsystem_group2/rtl/group2_pe.sv
+    - src/subsystem_group2/rtl/group2_sa.sv
+    - src/subsystem_group2/rtl/group2_output_buffer.sv
+    - src/subsystem_group2/rtl/group2_topmodule.sv
+    - src/subsystem_group2/fpga/group2_fpga_student_wrappers.sv
+
   - target: all(rtl, black_box)
-    files: 
+    files:
     - src/tech_generic/subsystem_tieoff.v
 
 vendor_package:

@@ -25,3 +25,4 @@ syn/didactic.analyze.synopsys.tcl
 syn/rtl_files.list
 syn/search_path.env
 syn/.bender_rtl_files.list
+V2_Migration_Improvement/

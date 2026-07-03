@@ -15,7 +15,7 @@ set BUILD_DIR $::env(BUILD_DIR)
 
 if { $PROJECT eq "z1" } {
   set XILINX_PART xc7z020clg400-1
-} elseif { $PROJECT eq "z2_course_io_ft232h_nucleo" } {
+} elseif { $PROJECT eq "z2_course_io_ft232h_nucleo" || $PROJECT eq "z2_course_io_ft232h_nucleo_group2" } {
   set XILINX_PART xc7z020clg400-1
 } elseif { $PROJECT eq "vcu118" } {
   set XILINX_PART xvup9p-flga2104-2L-e
@@ -57,18 +57,22 @@ set INCLUDE_DIRS [list  \
 set_property include_dirs $INCLUDE_DIRS [current_fileset]
 
 # File read
-# Bender tags - add bscane only for basys3_vjtag project
+# Bender tags - add bscane only for basys3_vjtag project.  The Group 2
+# subsystem target is FPGA-only and keeps the default/ASIC file list untouched.
+set BENDER_ARGS [list script flist -t fpga -t xilinx -t rtl -t vendor -t synthesis -t didactic_obi]
 if { $PROJECT eq "basys3_vjtag" } {
-  add_files -norecurse -scan_for_includes [exec bender script flist -t fpga -t xilinx -t rtl -t vendor -t synthesis -t didactic_obi -t bscane]
-} else {
-  add_files -norecurse -scan_for_includes [exec bender script flist -t fpga -t xilinx -t rtl -t vendor -t synthesis -t didactic_obi]
+  lappend BENDER_ARGS -t bscane
 }
+if { $PROJECT eq "z2_course_io_ft232h_nucleo_group2" } {
+  lappend BENDER_ARGS -t subsystem_group2_fpga
+}
+add_files -norecurse -scan_for_includes [exec bender {*}$BENDER_ARGS]
 
 if { $PROJECT eq "z1" } {
   add_files -norecurse $DIR/rtl/DidacticZ1.v
 }
 
-if { $PROJECT eq "z2_course_io_ft232h_nucleo" } {
+if { $PROJECT eq "z2_course_io_ft232h_nucleo" || $PROJECT eq "z2_course_io_ft232h_nucleo_group2" } {
   add_files -norecurse $DIR/rtl/DidacticZ2_FT232H_Nucleo.v
 }
 
@@ -91,7 +95,7 @@ set_property verilog_define { SYNTHESIS=1 FPGA=1 PRIM_DEFAULT_IMPL=prim_pkg::Imp
 set_property source_mgmt_mode None [current_project]
 if { $PROJECT eq "z1" } {
   set_property top DidacticZ1 [current_fileset]
-} elseif { $PROJECT eq "z2_course_io_ft232h_nucleo" } {
+} elseif { $PROJECT eq "z2_course_io_ft232h_nucleo" || $PROJECT eq "z2_course_io_ft232h_nucleo_group2" } {
   set_property top DidacticZ2_FT232H_Nucleo [current_fileset]
 } elseif { $PROJECT eq "a7" } {
   set_property top DidacticA7 [current_fileset]
@@ -104,10 +108,14 @@ if { $PROJECT eq "z1" } {
 update_compile_order -fileset sources_1
 
 # For the vjtag use the same basys3.xdc
+set CONSTRAINT_PROJECT $PROJECT
+if { $PROJECT eq "z2_course_io_ft232h_nucleo_group2" } {
+  set CONSTRAINT_PROJECT z2_course_io_ft232h_nucleo
+}
 if { $PROJECT eq "basys3_vjtag" } {
   add_files -fileset constrs_1 -norecurse constraints/basys3.xdc
 } else {
-  add_files -fileset constrs_1 -norecurse constraints/$PROJECT.xdc
+  add_files -fileset constrs_1 -norecurse constraints/$CONSTRAINT_PROJECT.xdc
 }
 #Elaborate design
 synth_design -rtl -name rtl_1 -sfcu
