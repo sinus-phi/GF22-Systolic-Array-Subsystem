@@ -94,8 +94,6 @@ elaborate: library_mapping
 	cd $(BUILD_DIR)
 	vopt \
 	$(DUT_LIBS) $(VOPT_OPTS) \
-	-gDM_SANITY_TESTCASES=$(SANITY_CHECK) \
-	-gTESTCASE=$(TESTCASE) \
 	-work $(BUILD_DIR)/didactic_lib \
 	$(DUT) \
 	-o $(DUT)_opt \
@@ -106,6 +104,7 @@ run_sim: library_mapping
 	cd $(BUILD_DIR)
 	vsim $(GUI) \
 	$(DUT_LIBS) $(VSIM_OPTS) \
+	+TESTCASE=$(TESTCASE) \
 	-work $(BUILD_DIR)/didactic_lib \
 	$(DUT)_opt \
 	-do "run 0ms;" \

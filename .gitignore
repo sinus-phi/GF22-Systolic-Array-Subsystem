@@ -18,6 +18,10 @@ __pycache__
 sim_build
 .venv
 .vscode/
-Ubuntu_Only
-Archives_Unused
+Ubuntu_Only/
+Archives_Unused/
 README_JINWOO_SS2_FPGA.md
+syn/didactic.analyze.synopsys.tcl
+syn/rtl_files.list
+syn/search_path.env
+syn/.bender_rtl_files.list

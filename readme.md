@@ -1,9 +1,5 @@
 # Didactic SoC
 
-## Jinwoo SS2 FPGA branch
-
-For the current PYNQ-Z2 + FT232H + Nucleo-F411RE workflow with SS2 subsystem integration, environment setup, synthesis, FPGA programming, JTAG ELF loading, and hardware test commands, see [README_JINWOO_SS2_FPGA_EN.md](README_JINWOO_SS2_FPGA_EN.md).
-
 This is the common chip template for the Edu4chip project. It is created with IP-XACT modeling using the Kactus2 tool. Source files are reused from both open source and previous projects. This project is licensed under the terms of the Solderpad Hardware License v2.1.
 
 See Doc Folder for more extensive documentation and guides as well as contribution guidelines (some of which are yet to be written).
@@ -33,6 +29,25 @@ After cloning this repository, run `make repository_init` to fetch all of the de
 Running Baremetal program on IBEX core has been abstracted to `make test_all TEST=blink` command.
 
 This will build HW libraries (`Questa`), executable binary (`riscv-toolchain`), convert binary to hexfile (`elf2hex`) and finally run the simulator (`Questa`). Testcase targets folder in sw folder and expects it to contain .c file with same name. Eg. <code>sw/hello/hello.c</code>.
+
+## Changes compared to the open-source github.com version
+
+- changed number and naming concept of subsystems, some port names changed
+- increased size of data memory to 128kB and program memory to 16kB 
+- changed address maps, subsystems now use address `0x015X_0000` with X equal to their index starting at 1
+- added support for Arty A7-100 FPGA board
+- several bug fixes
+- cleaned up RTL files, reorganized technology-related files
+
+### Migration Guide:
+
+1. Instantiate your top-level module in "src/generated/subsystem.v" (or rename it to match the new name)
+2. Change the following port names (functionality remains): `clk_in` -> `clk`; `reset_int` -> `reset_n`; `irq_en_X` -> `irq_en`; `irq_X` -> `irq`
+3. Remove the following ports (functionality removed): `ss_ctrl_3`; `high_speed_clk`
+4. Change port width of `PADDR` 32 -> 16
+5. In your C code, the base address is `0x015X_0000` with X as the index starting with 1, ie., `0x0151_0000`
+
+With the above changes, your submodule can be plugged into any slot from 1 to 7. Since the base address is a software change, it does not impact your hardware design. The reduced 16-bit `PADDR` is already stripped of the index, e.g., a C code address of `0x0153_abcd` reaches submodule 3 as `0xabcd`. This removes any need for index checking from your submodule hardware. 
 
 ## Folders
 
@@ -79,3 +94,4 @@ Verification: Contains experimental verilator setup and verification PyUVM platf
 ## What is excluded from repository
 
 * tool outputs: tools should create build folder for their output. None of this folder content should be part of the git repository. IF need be, provide documentation how to run tools to get the same output.
+

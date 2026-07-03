@@ -67,7 +67,7 @@ syn: check-env
 
 # compile hw library with chosen tools
 run_sim: check-env
-	$(MAKE) -C sim run_sim BUILD_DIR=$(BUILD_DIR)
+	$(MAKE) -C sim run_sim BUILD_DIR=$(BUILD_DIR) TESTCASE=$(TEST)
 
 ######################################################################
 # sw targets
