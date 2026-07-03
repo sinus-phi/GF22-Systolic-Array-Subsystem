@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#define SPI_BASE 0x01030200
+#define SPI_BASE 0x01300200
 
 #define STATUS *(uint32_t*)(SPI_BASE + 0x00u)
 #define CLKDIV *(uint32_t*)(SPI_BASE + 0x04u)
@@ -27,7 +27,7 @@
 #define INTCFG *(uint32_t*)(SPI_BASE + 0x24u)
 #define INTSTA *(uint32_t*)(SPI_BASE + 0x28u)
 
-#define CTRL_BASE 0x01040000
+#define CTRL_BASE 0x01400000
 #define SPI_PAD_CFG_DATA0 *(uint32_t*)(CTRL_BASE + 0x3C)
 #define SPI_PAD_CFG_DATA1 *(uint32_t*)(CTRL_BASE + 0x40)
 #define SPI_PAD_CFG_DATA2 *(uint32_t*)(CTRL_BASE + 0x44)
@@ -53,13 +53,13 @@ void spi_read(uint32_t addr){
   //toggle data pins to inputs
   volatile uint32_t mask = 0;
   mask = SPI_PAD_CFG_DATA0;
-  SPI_PAD_CFG_DATA0 = (mask | 1u);
+  SPI_PAD_CFG_DATA0 = (mask | 3u);
   mask = SPI_PAD_CFG_DATA1;
-  SPI_PAD_CFG_DATA1 = (mask | 1u);
+  SPI_PAD_CFG_DATA1 = (mask | 3u);
   mask = SPI_PAD_CFG_DATA2;
-  SPI_PAD_CFG_DATA2 = (mask | 1u);
+  SPI_PAD_CFG_DATA2 = (mask | 3u);
   mask = SPI_PAD_CFG_DATA3;
-  SPI_PAD_CFG_DATA3 = (mask | 1u);
+  SPI_PAD_CFG_DATA3 = (mask | 3u);
 
            //data      addr    cmd
   SPILEN = (32u<<16 | 32u<<8 | 8u);

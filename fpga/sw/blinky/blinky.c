@@ -13,11 +13,12 @@
 #include "soc_ctrl.h"
 #include "gpio.h"
 
-#define ADDR 0x01030000
+#define ADDR 0x01300000
 
 int main() {
 
-    pmod_target(5);
+  // Select system-control GPIO as PMOD/GPIO driver.
+  pmod_target(-1);
 
   gpio_init_out(0);
   gpio_init_out(1);

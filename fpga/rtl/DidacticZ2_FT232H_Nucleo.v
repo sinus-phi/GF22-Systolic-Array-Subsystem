@@ -1,0 +1,122 @@
+module DidacticZ2_FT232H_Nucleo (
+  // Interface: Clock
+  input  wire        clk_in,
+
+  // Interface: GPIO
+  inout  wire [15:0] gpio,
+
+  // Interface: JTAG
+  input  wire        jtag_tck,
+  input  wire        jtag_tdi,
+  output wire        jtag_tdo,
+  input  wire        jtag_tms,
+  input  wire        jtag_trst,
+
+  // Interface: Reset_n
+  input  wire        reset,
+
+  // Interface: SPI
+  output wire [1:0]  spi_csn,
+  inout  wire [3:0]  spi_data,
+  output wire        spi_sck,
+
+  // Interface: UART
+  input  wire        uart_rx,
+  output wire        uart_tx
+);
+
+  wire clk_8MHz;
+
+  PllZ2_FT232H_Nucleo clk_gen (
+    .clk_out(clk_8MHz),
+    .clk_in(clk_in)
+  );
+
+  Didactic didactic (
+    .clk_in(clk_8MHz),
+    .gpio(gpio),
+    .jtag_tck(jtag_tck),
+    .jtag_tdi(jtag_tdi),
+    .jtag_tdo(jtag_tdo),
+    .jtag_tms(jtag_tms),
+    .jtag_trst(jtag_trst),
+    .reset_n(reset),
+    .spi_csn(spi_csn),
+    .spi_data(spi_data),
+    .spi_sck(spi_sck),
+    .uart_rx(uart_rx),
+    .uart_tx(uart_tx)
+  );
+
+endmodule
+
+module PllZ2_FT232H_Nucleo (
+  output wire clk_out,
+  input  wire clk_in
+);
+
+  wire clk_in_Pll;
+
+  IBUF clkin1_ibufg (
+    .O(clk_in_Pll),
+    .I(clk_in)
+  );
+
+  wire        clk_out_Pll;
+  wire [15:0] do_unused;
+  wire        drdy_unused;
+  wire        locked_int;
+  wire        clkfbout_Pll;
+  wire        clkfbout_buf_Pll;
+  wire        clkout1_unused;
+  wire        clkout2_unused;
+  wire        clkout3_unused;
+  wire        clkout4_unused;
+  wire        clkout5_unused;
+
+  PLLE2_ADV #(
+    .BANDWIDTH("OPTIMIZED"),
+    .COMPENSATION("ZHOLD"),
+    .STARTUP_WAIT("FALSE"),
+    .DIVCLK_DIVIDE(5),
+    .CLKFBOUT_MULT(33),
+    .CLKFBOUT_PHASE(0.000),
+    .CLKOUT0_DIVIDE(33),
+    .CLKOUT0_PHASE(0.000),
+    .CLKOUT0_DUTY_CYCLE(0.500),
+    .CLKIN1_PERIOD(8.000)
+  ) plle2_adv_inst (
+    .CLKFBOUT(clkfbout_Pll),
+    .CLKOUT0(clk_out_Pll),
+    .CLKOUT1(clkout1_unused),
+    .CLKOUT2(clkout2_unused),
+    .CLKOUT3(clkout3_unused),
+    .CLKOUT4(clkout4_unused),
+    .CLKOUT5(clkout5_unused),
+    .CLKFBIN(clkfbout_buf_Pll),
+    .CLKIN1(clk_in_Pll),
+    .CLKIN2(1'b0),
+    .CLKINSEL(1'b1),
+    .DADDR(7'h0),
+    .DCLK(1'b0),
+    .DEN(1'b0),
+    .DI(16'h0),
+    .DO(do_unused),
+    .DRDY(drdy_unused),
+    .DWE(1'b0),
+    .LOCKED(locked_int),
+    .PWRDWN(1'b0),
+    .RST(1'b0)
+  );
+
+  BUFG clkf_buf (
+    .O(clkfbout_buf_Pll),
+    .I(clkfbout_Pll)
+  );
+
+  BUFG clkout1_buf (
+    .O(clk_out),
+    .I(clk_out_Pll)
+  );
+
+endmodule

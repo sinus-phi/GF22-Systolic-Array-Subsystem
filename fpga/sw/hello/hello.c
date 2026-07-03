@@ -11,11 +11,8 @@
 
 int main() {
 
-  // 8 MHz clock, 9600 baud
-  uart_init(8000000,9600);
+  uart_init();
 
-  while (1) {
-    uart_print("hello from didactic!\r\n");
-  }
+  uart_print("hello from didactic!\n");
   return 0;
 }

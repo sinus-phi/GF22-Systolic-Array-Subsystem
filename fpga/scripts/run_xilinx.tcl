@@ -15,14 +15,16 @@ set BUILD_DIR $::env(BUILD_DIR)
 
 if { $PROJECT eq "z1" } {
   set XILINX_PART xc7z020clg400-1
+} elseif { $PROJECT eq "z2_course_io_ft232h_nucleo" } {
+  set XILINX_PART xc7z020clg400-1
 } elseif { $PROJECT eq "vcu118" } {
   set XILINX_PART xvup9p-flga2104-2L-e
   puts "ERROR: VCU118 constraints are empty"
 } elseif { $PROJECT eq "basys3" || $PROJECT eq "basys3_vjtag"} {
   set XILINX_PART xc7a35tcpg236-1
 
-# } elseif { $PROJECT eq "a7" } {
-#   set XILINX_PART xc7a100tcsg324-1
+} elseif { $PROJECT eq "a7" } {
+  set XILINX_PART xc7a100tcsg324-1
 } else {
   puts "PROJECT variable contains unsupported board!"
   break
@@ -31,6 +33,7 @@ if { $PROJECT eq "z1" } {
 set DIR [exec pwd]
 
 create_project didactic-$PROJECT ../build/fpga/$PROJECT -force -part $XILINX_PART
+set_property XPM_LIBRARIES XPM_MEMORY [current_project]
 
 # add include paths of RTL
 set COMMON_CELLS_DIR [exec bender path common_cells]
@@ -65,6 +68,10 @@ if { $PROJECT eq "z1" } {
   add_files -norecurse $DIR/rtl/DidacticZ1.v
 }
 
+if { $PROJECT eq "z2_course_io_ft232h_nucleo" } {
+  add_files -norecurse $DIR/rtl/DidacticZ2_FT232H_Nucleo.v
+}
+
 if { $PROJECT eq "a7" } {
   add_files -norecurse $DIR/rtl/DidacticA7.v
 }
@@ -84,6 +91,8 @@ set_property verilog_define { SYNTHESIS=1 FPGA=1 PRIM_DEFAULT_IMPL=prim_pkg::Imp
 set_property source_mgmt_mode None [current_project]
 if { $PROJECT eq "z1" } {
   set_property top DidacticZ1 [current_fileset]
+} elseif { $PROJECT eq "z2_course_io_ft232h_nucleo" } {
+  set_property top DidacticZ2_FT232H_Nucleo [current_fileset]
 } elseif { $PROJECT eq "a7" } {
   set_property top DidacticA7 [current_fileset]
 } elseif { $PROJECT eq "basys3" || $PROJECT eq "basys3_vjtag" } {
