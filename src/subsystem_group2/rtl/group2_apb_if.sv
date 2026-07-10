@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// Holds one APB access until the internal target completes it.
 module group2_apb_if (
     input  logic [15:0] PADDR,
     input  logic        PENABLE,
@@ -27,6 +28,7 @@ module group2_apb_if (
   logic [31:0] wdata_q;
   logic        write_q;
 
+  // Capture APB only in its access phase; keep fields stable during stalls.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       pending_q <= 1'b0;
@@ -50,6 +52,7 @@ module group2_apb_if (
   assign bus_wena_o   = pending_q && write_q;
   assign bus_rena_o   = pending_q && !write_q;
 
+  // APB completes only when the selected internal target is ready.
   assign PRDATA  = bus_rdata_i;
   assign PREADY  = pending_q && bus_ready_i;
   assign PSLVERR = pending_q && bus_ready_i && bus_err_i;

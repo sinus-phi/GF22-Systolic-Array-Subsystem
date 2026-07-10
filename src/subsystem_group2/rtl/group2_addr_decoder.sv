@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// Validates each local access and routes it to one internal target.
 module group2_addr_decoder (
     input  logic [15:0] local_addr_i,
     input  logic [31:0] bus_wdata_i,
@@ -50,6 +51,7 @@ module group2_addr_decoder (
   assign out_word_idx_o = output_byte_offset[10:2];
 
   always_comb begin
+    // Default to no target selected and no error.
     reg_wena_o       = 1'b0;
     reg_rena_o       = 1'b0;
     weight_wena_o    = 1'b0;
@@ -60,10 +62,12 @@ module group2_addr_decoder (
     dec_err_o        = 1'b0;
     dec_error_code_o = ERR_NONE;
 
+    // Alignment errors take priority over address and state checks.
     if (access && !aligned) begin
       dec_err_o        = 1'b1;
       dec_error_code_o = ERR_UNALIGNED;
     end else if (bus_wena_i) begin
+      // Write path: commands, configuration, and streamed operands.
       if (local_addr_i == OFF_CONTROL) begin
         if (!onehot_command(bus_wdata_i)) begin
           dec_err_o        = 1'b1;
@@ -106,7 +110,9 @@ module group2_addr_decoder (
 
             CTRL_CLEAR_DONE,
             CTRL_CLEAR_ERROR,
-            CTRL_SOFT_RESET: reg_wena_o = 1'b1;
+            CTRL_SOFT_RESET: begin
+              reg_wena_o = 1'b1;
+            end
 
             default: begin
               dec_err_o        = 1'b1;
@@ -160,6 +166,7 @@ module group2_addr_decoder (
         dec_error_code_o = ERR_BAD_ADDR;
       end
     end else if (bus_rena_i) begin
+      // Read path: registers, bias storage, and completed output words.
       unique case (local_addr_i)
         OFF_STATUS,
         OFF_CONFIG,

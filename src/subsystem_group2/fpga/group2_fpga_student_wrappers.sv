@@ -1,18 +1,5 @@
-//-----------------------------------------------------------------------------
-// FPGA-only student wrapper replacement set for Group 2 subsystem validation.
-//
-// The generated Didactic top instantiates module types student_wrapper_0..6 for
-// student slots 1..7.  For FPGA validation we keep the generated SoC/CPU
-// template unchanged, replace only the wrapper module definitions through a
-// dedicated Bender target, and instantiate group2_topmodule only in slot 2.
-//
-// Slot mapping in the generated top:
-//   slot 1 -> module student_wrapper_0 -> tieoff
-//   slot 2 -> module student_wrapper_1 -> Group 2 subsystem
-//   slot 3 -> module student_wrapper_2 -> tieoff
-//   ...
-//   slot 7 -> module student_wrapper_6 -> tieoff
-//-----------------------------------------------------------------------------
+// FPGA-only student wrappers for the generated Didactic top.
+// Slot 2 (student_wrapper_1) contains Group 2; all other slots are tied off.
 
 `timescale 1ns/1ps
 
@@ -130,6 +117,7 @@ module student_wrapper_1 #(
   logic        group2_pslverr;
   logic        partial_write;
 
+  // The SoC controls the subsystem clock through clk_en.
   tc_clk_gating i_group2_clk_gate (
     .clk_i     (clk_in),
     .en_i      (clk_en),
@@ -148,7 +136,7 @@ module student_wrapper_1 #(
     .PSLVERR      (group2_pslverr),
     .clk_i        (group2_clk),
     .rst_ni       (reset_n),
-    .wrapper_fault_i(partial_write && PENABLE),
+    .wrapper_fault_i (partial_write && PENABLE),
     .irq_en_i     (irq_en),
     .pmod_gpi     (pmod_gpi),
     .irq_o        (group2_irq),
@@ -156,11 +144,12 @@ module student_wrapper_1 #(
     .pmod_gpio_oe (pmod_gpio_oe)
   );
 
+  // Group 2 accepts full 32-bit writes; reject partial PSTRB at the wrapper.
   assign partial_write = PSEL && PWRITE && (PSTRB != 4'b1111);
   assign PRDATA  = partial_write ? 32'd0 : group2_prdata;
   assign PREADY  = partial_write ? 1'b1 : group2_pready;
   assign PSLVERR = partial_write ? 1'b1 : group2_pslverr;
-  assign irq = group2_irq & irq_en;
+  assign irq     = group2_irq & irq_en;
 
   wire _unused = &{1'b0, PADDR[31:16], 1'b0};
 

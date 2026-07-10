@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// Expands packed APB words into one vector of eight signed INT16 lanes.
 module group2_input_frontend (
     input  logic         clk_i,
     input  logic         rst_ni,
@@ -33,6 +34,7 @@ module group2_input_frontend (
 
   integer lane;
 
+  // Two entries decouple APB writes from vector assembly.
   assign words_needed  = words_per_vector(precision_i);
   assign word_ready_o  = (fifo_count_q != 2'd2);
   assign push          = word_valid_i && word_ready_o;
@@ -41,27 +43,33 @@ module group2_input_frontend (
   assign vector_valid_o = vector_valid_q;
   assign vector_data_o  = vector_q;
 
+  // INT4 and INT8 lanes are sign-extended; INT16 lanes pass through.
   always_comb begin
     vector_next = vector_q;
     unique case (precision_i)
       DTYPE_INT4: begin
         for (lane = 0; lane < 8; lane = lane + 1) begin
-          vector_next[lane*16 +: 16] = {{12{head_word[lane*4+3]}},
-                                         head_word[lane*4 +: 4]};
+          vector_next[lane*16 +: 16] = {
+            {12{head_word[lane*4 + 3]}},
+            head_word[lane*4 +: 4]
+          };
         end
       end
+
       DTYPE_INT8: begin
         for (lane = 0; lane < 4; lane = lane + 1) begin
           vector_next[(word_index_q*4+lane)*16 +: 16] =
               {{8{head_word[lane*8+7]}}, head_word[lane*8 +: 8]};
         end
       end
+
       DTYPE_INT16: begin
         for (lane = 0; lane < 2; lane = lane + 1) begin
           vector_next[(word_index_q*2+lane)*16 +: 16] =
               head_word[lane*16 +: 16];
         end
       end
+
       default: vector_next = '0;
     endcase
   end
@@ -77,9 +85,10 @@ module group2_input_frontend (
     end else begin
       if (push) begin
         fifo_q[fifo_wr_q] <= word_i;
-        fifo_wr_q <= ~fifo_wr_q;
+        fifo_wr_q         <= ~fifo_wr_q;
       end
 
+      // Consume one packed word and publish after the last required word.
       if (pop) begin
         fifo_rd_q <= ~fifo_rd_q;
         vector_q  <= vector_next;

@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// Synchronous single-port 32x128 SRAM model used by FPGA and simulation.
 module group2_sram_32x128 (
     input  logic         clk_i,
     input  logic         rst_ni,
@@ -13,6 +14,7 @@ module group2_sram_32x128 (
 
   (* ram_style = "distributed" *) logic [127:0] mem_q [0:31];
 
+  // Memory contents are not reset; only the registered read interface is.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       rdata_o  <= '0;

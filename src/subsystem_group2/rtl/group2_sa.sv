@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// 8x16 systolic array; two weight banks cover 32 logical columns.
 module group2_sa (
     input  logic         clk_i,
     input  logic         rst_ni,
@@ -48,6 +49,7 @@ module group2_sa (
   integer busy_idx;
   integer seq_idx;
 
+  // Backpressure freezes data, PE, and tag pipelines together.
   assign advance     = !out_valid_o || out_ready_i;
   assign issue_valid = pending_q;
   assign act_ready_o = advance && (!pending_q || pending_bank_q);
@@ -55,6 +57,7 @@ module group2_sa (
   assign out_bank_o  = tag_bank_q[TAG_STAGES-1];
   assign out_row_o   = tag_row_q[TAG_STAGES-1];
 
+  // The array is idle only after all queued rows and tags have drained.
   always_comb begin
     pipe_busy = pending_q;
     for (busy_idx = 0; busy_idx < TAG_STAGES; busy_idx = busy_idx + 1) begin
@@ -80,6 +83,7 @@ module group2_sa (
         tag_row_q[seq_idx]   <= '0;
       end
     end else if (advance) begin
+      // Reuse each activation vector for weight bank 0, then weight bank 1.
       if (pending_q) begin
         if (!pending_bank_q) begin
           pending_bank_q <= 1'b1;
@@ -98,6 +102,7 @@ module group2_sa (
         pending_data_q <= act_data_i;
       end
 
+      // Delay each activation lane to meet its physical PE row.
       act_valid_pipe_q[0] <= issue_valid;
       act_bank_pipe_q[0]  <= pending_bank_q;
       act_data_pipe_q[0]  <= pending_data_q;
@@ -107,6 +112,7 @@ module group2_sa (
         act_data_pipe_q[seq_idx]  <= act_data_pipe_q[seq_idx-1];
       end
 
+      // Tags follow the same latency as the bottom-row result.
       tag_valid_q[0] <= issue_valid;
       tag_bank_q[0]  <= pending_bank_q;
       tag_row_q[0]   <= pending_row_q;
@@ -119,6 +125,7 @@ module group2_sa (
   end
 
   generate
+    // Partial sums move vertically through the eight PE rows.
     for (genvar row = 0; row < ARRAY_H; row = row + 1) begin : gen_rows
       for (genvar col = 0; col < ARRAY_W; col = col + 1) begin : gen_cols
         wire row_valid;
@@ -156,6 +163,7 @@ module group2_sa (
       end
     end
 
+    // The bottom PE row forms one 16-column output beat.
     for (genvar col = 0; col < ARRAY_W; col = col + 1) begin : gen_output
       assign out_data_o[col*16 +: 16] = pe_sum[ARRAY_H-1][col];
     end

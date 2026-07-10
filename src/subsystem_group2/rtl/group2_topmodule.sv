@@ -1,5 +1,7 @@
 `timescale 1ns/1ps
 
+// Group 2 integration: APB -> unpacker -> 8x16 SA -> SRAM output buffer.
+// rst_ni is active-low and sampled synchronously.
 module group2_topmodule (
     input  logic [15:0] PADDR,
     input  logic        PENABLE,
@@ -23,6 +25,7 @@ module group2_topmodule (
 
   import group2_pkg::*;
 
+  // APB bridge signals.
   logic [15:0] local_addr;
   logic [31:0] bus_wdata;
   logic        bus_wena;
@@ -31,6 +34,7 @@ module group2_topmodule (
   logic        bus_ready;
   logic        bus_err;
 
+  // Address-decoder selects.
   logic        reg_wena;
   logic        reg_rena;
   logic        weight_wena;
@@ -43,6 +47,7 @@ module group2_topmodule (
   logic        dec_err;
   logic [31:0] dec_error_code;
 
+  // Software-visible register state and command pulses.
   logic [31:0] config_word;
   logic        config_is_valid;
   logic [511:0] bias_data;
@@ -55,6 +60,7 @@ module group2_topmodule (
   logic        release_context_cmd;
   logic [31:0] reg_rdata;
 
+  // Operation-controller state.
   logic        frontend_clear;
   logic        sa_clear;
   logic        buffer_clear;
@@ -74,6 +80,7 @@ module group2_topmodule (
   logic [31:0] error_code;
   logic [9:0]  output_words;
 
+  // Packed-word frontend handshake.
   logic [1:0]  frontend_precision;
   logic        frontend_word_valid;
   logic        frontend_word_ready;
@@ -85,6 +92,7 @@ module group2_topmodule (
   logic        weight_vector_accept;
   logic        act_vector_accept;
 
+  // Systolic-array output handshake.
   logic        sa_act_ready;
   logic        sa_out_valid;
   logic        sa_out_ready;
@@ -93,11 +101,13 @@ module group2_topmodule (
   logic [255:0] sa_out_data;
   logic        sa_idle;
 
+  // Output-buffer read and completion signals.
   logic        output_beat_commit;
   logic [31:0] output_read_data;
   logic        output_read_ready;
   logic        bus_fault;
 
+  // APB transaction capture.
   group2_apb_if i_apb_if (
     .PADDR        (PADDR),
     .PENABLE      (PENABLE),
@@ -118,6 +128,7 @@ module group2_topmodule (
     .bus_err_i    (bus_err)
   );
 
+  // Access validation and internal target selection.
   group2_addr_decoder i_addr_decoder (
     .local_addr_i        (local_addr),
     .bus_wdata_i         (bus_wdata),
@@ -147,6 +158,7 @@ module group2_topmodule (
     .dec_error_code_o    (dec_error_code)
   );
 
+  // Configuration, bias storage, status, and command generation.
   group2_regbank i_regbank (
     .clk_i                 (clk_i),
     .rst_ni                (rst_ni),
@@ -186,6 +198,7 @@ module group2_topmodule (
 
   assign bus_fault = (bus_wena || bus_rena) && dec_err && bus_ready;
 
+  // Tracks the current tile and GACC context.
   group2_sa_ctrl i_sa_ctrl (
     .clk_i                  (clk_i),
     .rst_ni                 (rst_ni),
@@ -224,15 +237,22 @@ module group2_topmodule (
     .output_words_o         (output_words)
   );
 
-  assign frontend_precision    = (phase == PH_WEIGHT) ? config_word[3:2] : config_word[1:0];
+  // The same unpacker serves weight and activation streams.
+  assign frontend_precision = (phase == PH_WEIGHT)
+                              ? config_word[3:2]
+                              : config_word[1:0];
   assign frontend_word_valid   = weight_wena || act_wena;
   assign weight_word_accept    = weight_wena && frontend_word_ready;
   assign act_word_accept       = act_wena && frontend_word_ready;
   assign frontend_vector_ready = (phase == PH_WEIGHT) ? 1'b1 : sa_act_ready;
-  assign weight_vector_accept  = frontend_vector_valid && frontend_vector_ready &&
-                                 (phase == PH_WEIGHT);
-  assign act_vector_accept     = frontend_vector_valid && frontend_vector_ready &&
-                                 (phase == PH_ACTIVATION);
+  assign weight_vector_accept =
+      frontend_vector_valid &&
+      frontend_vector_ready &&
+      (phase == PH_WEIGHT);
+  assign act_vector_accept =
+      frontend_vector_valid &&
+      frontend_vector_ready &&
+      (phase == PH_ACTIVATION);
 
   group2_input_frontend i_input_frontend (
     .clk_i          (clk_i),
@@ -285,6 +305,7 @@ module group2_topmodule (
     .rd_ready_o        (output_read_ready)
   );
 
+  // Scalar accesses complete immediately; streams and output reads may stall.
   always_comb begin
     bus_ready = 1'b1;
     bus_rdata = reg_rdata;

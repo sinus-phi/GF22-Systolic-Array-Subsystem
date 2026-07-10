@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// Stores software configuration/bias and exposes status/control registers.
 module group2_regbank (
     input  logic         clk_i,
     input  logic         rst_ni,
@@ -45,6 +46,7 @@ module group2_regbank (
   logic [511:0] bias_q;
   logic [15:0] bias_valid_q;
 
+  // All 16 bias words must be written before a bias-enabled GEMM starts.
   assign config_o       = config_q;
   assign config_valid_o = config_valid(config_q);
   assign bias_data_o    = bias_q;
@@ -53,16 +55,17 @@ module group2_regbank (
   assign pmod_gpo       = 16'd0;
   assign pmod_gpio_oe   = 16'd0;
 
+  // CONTROL writes become one-cycle command pulses.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
-      config_q             <= '0;
-      bias_q               <= '0;
-      bias_valid_q         <= '0;
-      start_gemm_cmd_o     <= 1'b0;
-      start_gacc_cmd_o     <= 1'b0;
-      clear_done_cmd_o     <= 1'b0;
-      clear_error_cmd_o    <= 1'b0;
-      soft_reset_cmd_o     <= 1'b0;
+      config_q              <= '0;
+      bias_q                <= '0;
+      bias_valid_q          <= '0;
+      start_gemm_cmd_o      <= 1'b0;
+      start_gacc_cmd_o      <= 1'b0;
+      clear_done_cmd_o      <= 1'b0;
+      clear_error_cmd_o     <= 1'b0;
+      soft_reset_cmd_o      <= 1'b0;
       release_context_cmd_o <= 1'b0;
     end else begin
       start_gemm_cmd_o      <= 1'b0;
@@ -86,6 +89,7 @@ module group2_regbank (
               bias_valid_q <= '0;
             end
           end
+
           OFF_CONFIG: config_q <= bus_wdata_i;
           default: ;
         endcase
@@ -93,11 +97,12 @@ module group2_regbank (
 
       if (bias_wena_i) begin
         bias_q[bias_word_idx_i*32 +: 32] <= bus_wdata_i;
-        bias_valid_q[bias_word_idx_i] <= 1'b1;
+        bias_valid_q[bias_word_idx_i]     <= 1'b1;
       end
     end
   end
 
+  // Bias words share the read mux with the scalar register bank.
   always_comb begin
     reg_rdata_o = 32'd0;
     if (bias_rena_i) begin

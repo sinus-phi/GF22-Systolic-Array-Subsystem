@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// Stores 32x32 INT16 results and performs in-place GACC updates.
 module group2_output_buffer (
     input  logic         clk_i,
     input  logic         rst_ni,
@@ -60,40 +61,49 @@ module group2_output_buffer (
   integer cmd_bank;
   integer seq_bank;
 
+  // One APB word selects a row and a pair of adjacent INT16 columns.
   assign request_row  = rd_word_idx_i[8:4];
   assign request_pair = rd_word_idx_i[3:0];
   assign cache_hit    = cache_valid_q && (cache_row_q == request_row);
   assign rd_ready_o   = rd_req_i && cache_hit;
 
+  // Bias is added at read time with the same INT16 wrap semantics.
   always_comb begin
-    result_lo = cache_data_q[(request_pair*32) +: 16];
-    result_hi = cache_data_q[(request_pair*32+16) +: 16];
-    bias_lo   = bias_data_i[(request_pair*32) +: 16];
-    bias_hi   = bias_data_i[(request_pair*32+16) +: 16];
+    result_lo = cache_data_q[(request_pair * 32) +: 16];
+    result_hi = cache_data_q[(request_pair * 32 + 16) +: 16];
+    bias_lo   = bias_data_i[(request_pair * 32) +: 16];
+    bias_hi   = bias_data_i[(request_pair * 32 + 16) +: 16];
+
     if (bias_enable_i) begin
       result_lo = result_lo + bias_lo;
       result_hi = result_hi + bias_hi;
     end
+
     rd_data_o = {result_hi, result_lo};
   end
 
+  // Fill the row cache on a miss or a sequential-read prefetch.
   assign cache_issue = !cache_fill_q &&
                        (prefetch_q || (rd_req_i && !cache_hit));
   assign cache_issue_row = prefetch_q ? prefetch_row_q : request_row;
 
+  // GACC adds the new beat to the matching SRAM row lane by lane.
   always_comb begin
     for (add_bank = 0; add_bank < 2; add_bank = add_bank + 1) begin
       gacc_sum[add_bank] = '0;
       for (add_lane = 0; add_lane < 16; add_lane = add_lane + 1) begin
-        gacc_sum[add_bank][add_lane*16 +: 16] =
-            pending_data_q[add_bank][add_lane*16 +: 16] +
-            sram_rdata[add_bank][add_lane*16 +: 16];
+        gacc_sum[add_bank][add_lane * 16 +: 16] =
+            pending_data_q[add_bank][add_lane * 16 +: 16] +
+            sram_rdata[add_bank][add_lane * 16 +: 16];
       end
     end
   end
 
+  // SRAM priority: finish GACC, accept an output beat, then service reads.
   always_comb begin
-    beat_ready_o = !pending_q[beat_bank_i] && !cache_fill_q && !prefetch_q;
+    beat_ready_o = !pending_q[beat_bank_i] &&
+                   !cache_fill_q &&
+                   !prefetch_q;
     beat_accept  = beat_valid_i && beat_ready_o;
     commit[0]    = 1'b0;
     commit[1]    = 1'b0;
@@ -104,13 +114,16 @@ module group2_output_buffer (
       sram_addr[cmd_bank]  = '0;
       sram_wdata[cmd_bank] = '0;
 
-      if (gacc_i && pending_q[cmd_bank] && sram_rvalid[cmd_bank]) begin
+      if (gacc_i &&
+          pending_q[cmd_bank] &&
+          sram_rvalid[cmd_bank]) begin
         sram_en[cmd_bank]    = 1'b1;
         sram_we[cmd_bank]    = 1'b1;
         sram_addr[cmd_bank]  = pending_row_q[cmd_bank];
         sram_wdata[cmd_bank] = gacc_sum[cmd_bank];
         commit[cmd_bank]     = 1'b1;
-      end else if (beat_accept && (beat_bank_i == 1'(cmd_bank))) begin
+      end else if (beat_accept &&
+                   (beat_bank_i == 1'(cmd_bank))) begin
         sram_en[cmd_bank]   = 1'b1;
         sram_addr[cmd_bank] = beat_row_i;
         if (gacc_i) begin
@@ -146,6 +159,7 @@ module group2_output_buffer (
       prefetch_q         <= 1'b0;
       prefetch_row_q     <= '0;
     end else begin
+      // A GACC beat waits here while its old SRAM row is being read.
       for (seq_bank = 0; seq_bank < 2; seq_bank = seq_bank + 1) begin
         if (beat_accept && gacc_i && (beat_bank_i == 1'(seq_bank))) begin
           pending_q[seq_bank]      <= 1'b1;
@@ -157,6 +171,7 @@ module group2_output_buffer (
         end
       end
 
+      // Both banks are fetched together to form one 512-bit output row.
       if (cache_issue) begin
         cache_fill_q     <= 1'b1;
         cache_fill_row_q <= cache_issue_row;
@@ -171,6 +186,7 @@ module group2_output_buffer (
         cache_fill_q  <= 1'b0;
       end
 
+      // Reading the final word of a row starts the next-row prefetch.
       if (rd_req_i && rd_ready_o && (request_pair == 4'd15) &&
           (request_row != 5'd31)) begin
         cache_valid_q  <= 1'b0;
@@ -181,6 +197,7 @@ module group2_output_buffer (
   end
 
   generate
+    // Two logical 256-bit banks, each built from two 128-bit SRAM macros.
     for (genvar b = 0; b < 2; b = b + 1) begin : gen_banks
       group2_sram_32x128 i_sram_lo (
         .clk_i    (clk_i),

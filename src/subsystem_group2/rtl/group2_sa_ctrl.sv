@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+// Operation controller: IDLE -> WEIGHT -> ACTIVATION -> DRAIN/GACC -> OUTPUT.
 module group2_sa_ctrl (
     input  logic        clk_i,
     input  logic        rst_ni,
@@ -64,18 +65,27 @@ module group2_sa_ctrl (
   assign error_sticky_o      = error_sticky_q;
   assign done_sticky_o       = done_sticky_q;
   assign context_valid_o     = context_valid_q;
-  assign context_match_o     = context_valid_q && (context_config_q[10:0] == config_i[10:0]);
+  assign context_match_o     = context_valid_q &&
+                               (context_config_q[10:0] == config_i[10:0]);
   assign output_readable_o   = context_valid_q && (phase_q == PH_OUTPUT);
   assign weight_words_left_o = weight_words_left_q;
   assign act_words_left_o    = act_words_left_q;
   assign weight_vector_idx_o = weight_vector_count_q[4:0];
   assign act_row_idx_o       = act_vector_count_q[4:0];
   assign error_code_o        = error_code_q;
-  assign output_words_o      = output_words_for(context_valid_q ? context_config_q : config_i);
-  assign expected_output_beats = {1'b0, cfg_rows_m(config_i)} << 1;
-  assign busy_o = (phase_q == PH_WEIGHT) || (phase_q == PH_ACTIVATION) ||
-                  (phase_q == PH_DRAIN) || (phase_q == PH_GACC);
+  assign output_words_o      = output_words_for(
+      context_valid_q ? context_config_q : config_i
+  );
 
+  // Each output row produces one beat from each 16-column bank.
+  assign expected_output_beats = {1'b0, cfg_rows_m(config_i)} << 1;
+  assign busy_o =
+      (phase_q == PH_WEIGHT) ||
+      (phase_q == PH_ACTIVATION) ||
+      (phase_q == PH_DRAIN) ||
+      (phase_q == PH_GACC);
+
+  // PROGRESS packs accepted weight words, activation words, beats, and phase.
   always_comb begin
     progress_o = 32'd0;
     progress_o[8:0]   = weight_words_for(config_i) - weight_words_left_q;
@@ -102,13 +112,17 @@ module group2_sa_ctrl (
       sa_clear_o            <= 1'b0;
       buffer_clear_o        <= 1'b0;
     end else begin
+      // Clear strobes are single-cycle pulses to the data-path blocks.
       frontend_clear_o <= 1'b0;
       sa_clear_o       <= 1'b0;
       buffer_clear_o   <= 1'b0;
 
+      // Preserve the first fault until software clears it.
       if ((bus_fault_i || wrapper_fault_i) && !error_sticky_q) begin
         error_sticky_q <= 1'b1;
-        error_code_q   <= wrapper_fault_i ? ERR_PARTIAL_WRITE : bus_fault_code_i;
+        error_code_q   <= wrapper_fault_i
+                          ? ERR_PARTIAL_WRITE
+                          : bus_fault_code_i;
       end
       if (clear_error_cmd_i) begin
         error_sticky_q <= 1'b0;
@@ -118,6 +132,7 @@ module group2_sa_ctrl (
         done_sticky_q <= 1'b0;
       end
 
+      // Commands below are ordered by priority.
       if (soft_reset_cmd_i) begin
         phase_q               <= PH_IDLE;
         operation_gacc_q      <= 1'b0;
@@ -141,6 +156,7 @@ module group2_sa_ctrl (
         output_beat_count_q <= '0;
         buffer_clear_o      <= 1'b1;
       end else if (start_gemm_cmd_i || start_gacc_cmd_i) begin
+        // A new tile always reloads weights and activations.
         phase_q               <= PH_WEIGHT;
         operation_gacc_q      <= start_gacc_cmd_i;
         done_sticky_q         <= 1'b0;
@@ -155,6 +171,7 @@ module group2_sa_ctrl (
         sa_clear_o            <= 1'b1;
         buffer_clear_o        <= 1'b1;
       end else begin
+        // Count words when the frontend accepts their APB transfers.
         if (weight_word_accept_i && (weight_words_left_q != 0)) begin
           weight_words_left_q <= weight_words_left_q - 1'b1;
         end
@@ -162,6 +179,7 @@ module group2_sa_ctrl (
           act_words_left_q <= act_words_left_q - 1'b1;
         end
 
+        // The 32nd weight vector opens the activation phase.
         if (weight_vector_accept_i) begin
           weight_vector_count_q <= weight_vector_count_q + 1'b1;
           if ((weight_vector_count_q == 6'd31) && (weight_words_left_q == 0)) begin
@@ -169,6 +187,7 @@ module group2_sa_ctrl (
           end
         end
 
+        // The last activation vector starts array drain or GACC writeback.
         if (act_vector_accept_i) begin
           act_vector_count_q <= act_vector_count_q + 1'b1;
           if ((act_vector_count_q + 1'b1) == {1'b0, cfg_rows_m(config_i)} &&
@@ -177,6 +196,7 @@ module group2_sa_ctrl (
           end
         end
 
+        // Two committed beats per row complete the output context.
         if (output_beat_commit_i) begin
           output_beat_count_q <= output_beat_count_q + 1'b1;
           if ((output_beat_count_q + 1'b1) == expected_output_beats) begin
