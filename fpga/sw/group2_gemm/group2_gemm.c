@@ -61,13 +61,11 @@ int main(void)
   uint32_t cfg = group2_sa_make_config(GROUP2_SA_DTYPE_INT4,
                                        GROUP2_SA_DTYPE_INT4,
                                        TILE_M,
-                                       TILE_N,
-                                       TILE_K,
-                                       1u);
+                                       0u);
   group2_sa_write32(GROUP2_SA_OFF_CONFIG, cfg);
-  group2_sa_write32(GROUP2_SA_OFF_CONTROL, GROUP2_SA_CTRL_LOAD_WEIGHTS);
+  group2_sa_write32(GROUP2_SA_OFF_CONTROL, GROUP2_SA_CTRL_START_GEMM);
 
-  if (group2_sa_wait_phase(GROUP2_SA_PH_LOAD_WEIGHTS, 2000u, &status) != 0) {
+  if (group2_sa_wait_phase(GROUP2_SA_PH_WEIGHT, 2000u, &status) != 0) {
     group2_print_str("[FAIL] load weight phase timeout status=");
     group2_print_hex32(status);
     group2_print_str("\r\n");
@@ -77,35 +75,42 @@ int main(void)
   for (uint32_t n = 0u; n < TILE_N; ++n) {
     group2_sa_stream_weight_vector(weights[n], GROUP2_SA_DTYPE_INT4, TILE_K);
   }
+  const int32_t zero_weight[GROUP2_SA_K_TILE] = {0};
+  for (uint32_t n = TILE_N; n < GROUP2_SA_LOGICAL_N; ++n) {
+    group2_sa_stream_weight_vector(zero_weight, GROUP2_SA_DTYPE_INT4,
+                                   GROUP2_SA_K_TILE);
+  }
 
-  if (group2_sa_wait_phase(GROUP2_SA_PH_BATCH_COMPUTE, 4000u, &status) != 0) {
+  if (group2_sa_wait_phase(GROUP2_SA_PH_ACTIVATION, 4000u, &status) != 0) {
     group2_print_str("[FAIL] compute phase timeout status=");
     group2_print_hex32(status);
     group2_print_str("\r\n");
     errors++;
-  } else {
-    group2_print_check_u32("weights valid", 1u,
-                           group2_sa_status_weights_valid(status), &errors);
   }
 
   for (uint32_t m = 0u; m < TILE_M; ++m) {
     group2_sa_stream_activation_vector(acts[m], GROUP2_SA_DTYPE_INT4, TILE_K);
   }
 
-  if (group2_sa_wait_output_valid(8000u, &status) != 0) {
+  if (group2_sa_wait_output(8000u, &status) != 0) {
     group2_print_str("[FAIL] output valid timeout status=");
     group2_print_hex32(status);
     group2_print_str("\r\n");
     errors++;
   } else {
     group2_print_check_u32("output word count",
-                           TILE_M * TILE_N * 2u,
-                           group2_sa_status_output_words(status),
+                           TILE_M * GROUP2_SA_OUTPUT_WORDS_PER_ROW,
+                           group2_sa_output_words(),
                            &errors);
 
     for (uint32_t m = 0u; m < TILE_M; ++m) {
-      for (uint32_t n = 0u; n < TILE_N; ++n) {
-        got[m][n] = (int32_t)group2_sa_read_output_elem(m, n, TILE_N);
+      for (uint32_t pair = 0u; pair < (TILE_N + 1u) / 2u; ++pair) {
+        uint32_t word = group2_sa_read_output_word(m, pair);
+        uint32_t col = pair * 2u;
+        got[m][col] = (int32_t)group2_sa_output_word_low(word);
+        if (col + 1u < TILE_N) {
+          got[m][col + 1u] = (int32_t)group2_sa_output_word_high(word);
+        }
       }
     }
 
@@ -124,7 +129,7 @@ int main(void)
     }
   }
 
-  group2_sa_release_output();
+  group2_sa_release_context();
   if (group2_sa_wait_phase(GROUP2_SA_PH_IDLE, 4000u, &status) != 0) {
     group2_print_str("[FAIL] idle after release timeout status=");
     group2_print_hex32(status);

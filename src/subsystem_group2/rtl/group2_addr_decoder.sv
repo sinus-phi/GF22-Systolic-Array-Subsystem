@@ -1,19 +1,5 @@
 `timescale 1ns/1ps
 
-//-----------------------------------------------------------------------------
-// Local address decoder and access-policy gate.
-//
-// This block turns an accepted APB read/write into one local target pulse:
-// register access, weight input, activation input, or output read. It also
-// rejects accesses that are not legal for the current FSM phase.
-//
-// This is deliberately more than a pure address decoder: it protects the
-// datapath from firmware ordering mistakes and converts them into recoverable
-// APB faults.  Rejected accesses never assert a target pulse, so subsystem
-// state remains usable unless the controller itself reports a fatal invariant
-// failure.
-//-----------------------------------------------------------------------------
-
 module group2_addr_decoder (
     input  logic [15:0] local_addr_i,
     input  logic [31:0] bus_wdata_i,
@@ -21,17 +7,26 @@ module group2_addr_decoder (
     input  logic        bus_rena_i,
 
     input  logic [2:0]  phase_i,
+    input  logic        busy_i,
+    input  logic [31:0] config_i,
     input  logic        config_valid_i,
-    input  logic        weights_valid_i,
-    input  logic        output_valid_i,
-    input  logic [31:0] output_words_i,
+    input  logic        bias_ready_i,
+    input  logic        context_valid_i,
+    input  logic        context_match_i,
+    input  logic        output_readable_i,
+    input  logic [9:0]  output_words_i,
+    input  logic [8:0]  weight_words_left_i,
+    input  logic [8:0]  act_words_left_i,
 
     output logic        reg_wena_o,
     output logic        reg_rena_o,
     output logic        weight_wena_o,
     output logic        act_wena_o,
+    output logic        bias_wena_o,
+    output logic        bias_rena_o,
+    output logic [3:0]  bias_word_idx_o,
     output logic        out_rena_o,
-    output logic [7:0]  out_word_idx_o,
+    output logic [8:0]  out_word_idx_o,
     output logic        dec_err_o,
     output logic [31:0] dec_error_code_o
 );
@@ -39,153 +34,164 @@ module group2_addr_decoder (
   import group2_pkg::*;
 
   logic access;
-  logic word_aligned;
-  logic in_reg_region;
-  logic in_weight_region;
-  logic in_act_region;
-  logic in_out_region;
+  logic aligned;
+  logic in_bias;
+  logic in_output;
+  logic [15:0] output_byte_offset;
 
-  // 16-bit v2 local map.  Only the lower ranges below are implemented; all
-  // other addresses in the 64 KiB subsystem window are rejected as BAD_ADDR.
-  // The stream windows are command streams, not true memories:
-  // repeated writes to the same weight/activation address are valid because the
-  // frontend consumes each accepted APB word in arrival order.
-  //
-  //   0x000-0x0FF registers
-  //   0x100-0x1FF weight input words
-  //   0x200-0x2FF activation input words
-  //   0x400-0x7FF output read words
-  assign access           = bus_wena_i | bus_rena_i;
-  assign word_aligned     = (local_addr_i[1:0] == 2'b00);
-  assign in_reg_region    = (local_addr_i[15:8] == 8'h00);
-  assign in_weight_region = (local_addr_i[15:8] == 8'h01);
-  assign in_act_region    = (local_addr_i[15:8] == 8'h02);
-  assign in_out_region    = (local_addr_i[15:10] == 6'h01);
-  assign out_word_idx_o   = local_addr_i[9:2];
+  assign access = bus_wena_i | bus_rena_i;
+  assign aligned = (local_addr_i[1:0] == 2'b00);
+  assign in_bias = (local_addr_i >= OFF_BIAS_BASE) &&
+                   (local_addr_i <= OFF_BIAS_LAST);
+  assign in_output = (local_addr_i >= OFF_OUTPUT_BASE) &&
+                     (local_addr_i <= OFF_OUTPUT_LAST);
+  assign bias_word_idx_o = local_addr_i[5:2];
+  assign output_byte_offset = local_addr_i - OFF_OUTPUT_BASE;
+  assign out_word_idx_o = output_byte_offset[10:2];
 
   always_comb begin
-    // Default is a rejected/no-op access; legal cases below assert exactly one
-    // target pulse and leave dec_err_o low.
     reg_wena_o       = 1'b0;
     reg_rena_o       = 1'b0;
     weight_wena_o    = 1'b0;
     act_wena_o       = 1'b0;
+    bias_wena_o      = 1'b0;
+    bias_rena_o      = 1'b0;
     out_rena_o       = 1'b0;
     dec_err_o        = 1'b0;
     dec_error_code_o = ERR_NONE;
 
-    if (access && !word_aligned) begin
-      // The subsystem only implements word-granular APB accesses.
+    if (access && !aligned) begin
       dec_err_o        = 1'b1;
       dec_error_code_o = ERR_UNALIGNED;
-    end
+    end else if (bus_wena_i) begin
+      if (local_addr_i == OFF_CONTROL) begin
+        if (!onehot_command(bus_wdata_i)) begin
+          dec_err_o        = 1'b1;
+          dec_error_code_o = ERR_ILLEGAL_COMMAND;
+        end else begin
+          unique case (bus_wdata_i)
+            CTRL_START_GEMM: begin
+              if (busy_i) begin
+                dec_err_o        = 1'b1;
+                dec_error_code_o = ERR_BAD_STATE;
+              end else if (!config_valid_i) begin
+                dec_err_o        = 1'b1;
+                dec_error_code_o = ERR_INVALID_CONFIG;
+              end else if (cfg_bias_enable(config_i) && !bias_ready_i) begin
+                dec_err_o        = 1'b1;
+                dec_error_code_o = ERR_BIAS_NOT_READY;
+              end else begin
+                reg_wena_o = 1'b1;
+              end
+            end
 
-    else if (bus_wena_i) begin
-      if (in_weight_region) begin
-        // Weight words are accepted only during the explicit load phase.
-        if (phase_i == PH_LOAD_WEIGHTS) begin
+            CTRL_START_GACC: begin
+              if (busy_i || !context_valid_i || !context_match_i ||
+                  (phase_i != PH_OUTPUT)) begin
+                dec_err_o        = 1'b1;
+                dec_error_code_o = ERR_INVALID_GACC_CONTEXT;
+              end else begin
+                reg_wena_o = 1'b1;
+              end
+            end
+
+            CTRL_RELEASE_CONTEXT: begin
+              if (busy_i || !context_valid_i || (phase_i != PH_OUTPUT)) begin
+                dec_err_o        = 1'b1;
+                dec_error_code_o = ERR_BAD_STATE;
+              end else begin
+                reg_wena_o = 1'b1;
+              end
+            end
+
+            CTRL_CLEAR_DONE,
+            CTRL_CLEAR_ERROR,
+            CTRL_SOFT_RESET: reg_wena_o = 1'b1;
+
+            default: begin
+              dec_err_o        = 1'b1;
+              dec_error_code_o = ERR_ILLEGAL_COMMAND;
+            end
+          endcase
+        end
+      end else if (local_addr_i == OFF_CONFIG) begin
+        if (busy_i || context_valid_i || (phase_i != PH_IDLE)) begin
+          dec_err_o        = 1'b1;
+          dec_error_code_o = ERR_BAD_STATE;
+        end else if (!dtype_supported(bus_wdata_i[1:0]) ||
+                     !dtype_supported(bus_wdata_i[3:2])) begin
+          dec_err_o        = 1'b1;
+          dec_error_code_o = ERR_UNSUPPORTED_DTYPE;
+        end else if (!config_valid(bus_wdata_i)) begin
+          dec_err_o        = 1'b1;
+          dec_error_code_o = ERR_INVALID_CONFIG;
+        end else begin
+          reg_wena_o = 1'b1;
+        end
+      end else if (local_addr_i == OFF_WEIGHT_DATA) begin
+        if ((phase_i == PH_WEIGHT) && (weight_words_left_i != 0)) begin
           weight_wena_o = 1'b1;
+        end else if (busy_i) begin
+          dec_err_o        = 1'b1;
+          dec_error_code_o = ERR_STREAM_COUNT;
         end else begin
           dec_err_o        = 1'b1;
           dec_error_code_o = ERR_BAD_STATE;
         end
-      end
-
-      else if (in_act_region) begin
-        // Activation words are accepted only after a valid weight context
-        // exists and the FSM is ready to compute a batch.
-        if ((phase_i == PH_BATCH_COMPUTE) && weights_valid_i) begin
+      end else if (local_addr_i == OFF_ACT_DATA) begin
+        if ((phase_i == PH_ACTIVATION) && (act_words_left_i != 0)) begin
           act_wena_o = 1'b1;
+        end else if (busy_i) begin
+          dec_err_o        = 1'b1;
+          dec_error_code_o = ERR_STREAM_COUNT;
         end else begin
           dec_err_o        = 1'b1;
           dec_error_code_o = ERR_BAD_STATE;
         end
-      end
-
-      else if (in_reg_region) begin
-        unique case (local_addr_i)
-          OFF_CONTROL: begin
-            // load_weights is the only command that starts a new transaction;
-            // other command bits may be used for release/clear/reset.
-            if (bus_wdata_i[0] && (phase_i != PH_IDLE)) begin
-              dec_err_o        = 1'b1;
-              dec_error_code_o = ERR_BAD_STATE;
-            end else if (bus_wdata_i[0] && output_valid_i) begin
-              // Firmware must release/read the current output before starting
-              // a new load, otherwise the output buffer context would be lost.
-              dec_err_o        = 1'b1;
-              dec_error_code_o = ERR_BAD_STATE;
-            end else if (bus_wdata_i[0] && !config_valid_i) begin
-              dec_err_o        = 1'b1;
-              dec_error_code_o = ERR_INVALID_CONFIG;
-            end else begin
-              reg_wena_o = 1'b1;
-            end
-          end
-
-          OFF_CONFIG: begin
-            // CONFIG is locked once a weight context is active.  Firmware must
-            // finish/release the previous output or soft-reset before changing
-            // precision or tile dimensions.
-            if ((phase_i == PH_IDLE) && !weights_valid_i) begin
-              reg_wena_o = 1'b1;
-            end else begin
-              dec_err_o        = 1'b1;
-              dec_error_code_o = ERR_BAD_STATE;
-            end
-          end
-
-          default: begin
-            dec_err_o        = 1'b1;
-            dec_error_code_o = ERR_BAD_ADDR;
-          end
-        endcase
-      end
-
-      else begin
-        dec_err_o        = 1'b1;
-        dec_error_code_o = ERR_BAD_ADDR;
-      end
-    end
-
-    else if (bus_rena_i) begin
-      if (in_out_region) begin
-        // Output reads are controlled by output_valid, not by a DONE state.
-        // Reads past output_words_i are rejected so firmware cannot silently
-        // consume stale lanes from the physical 8x8 buffer.
-        if (!output_valid_i) begin
+      end else if (in_bias) begin
+        if (!busy_i && !context_valid_i && (phase_i == PH_IDLE)) begin
+          bias_wena_o = 1'b1;
+        end else begin
           dec_err_o        = 1'b1;
           dec_error_code_o = ERR_BAD_STATE;
-        end else if ({24'd0, out_word_idx_o} >= output_words_i) begin
-          dec_err_o        = 1'b1;
-          dec_error_code_o = ERR_OUTPUT_RANGE;
-        end else begin
-          out_rena_o = 1'b1;
         end
-      end
-
-      else if (in_reg_region) begin
-        unique case (local_addr_i)
-          OFF_CONTROL,
-          OFF_STATUS,
-          OFF_CONFIG,
-          OFF_PROGRESS,
-          OFF_ERROR_CODE,
-          OFF_OUTPUT_WORDS: begin
-            reg_rena_o = 1'b1;
-          end
-
-          default: begin
-            dec_err_o        = 1'b1;
-            dec_error_code_o = ERR_BAD_ADDR;
-          end
-        endcase
-      end
-
-      else begin
+      end else begin
         dec_err_o        = 1'b1;
         dec_error_code_o = ERR_BAD_ADDR;
       end
+    end else if (bus_rena_i) begin
+      unique case (local_addr_i)
+        OFF_STATUS,
+        OFF_CONFIG,
+        OFF_PROGRESS,
+        OFF_ERROR_CODE,
+        OFF_OUTPUT_WORDS,
+        OFF_VERSION,
+        OFF_CAPABILITY: reg_rena_o = 1'b1;
+        default: begin
+          if (in_bias) begin
+            if (!busy_i && !context_valid_i && (phase_i == PH_IDLE)) begin
+              bias_rena_o = 1'b1;
+            end else begin
+              dec_err_o        = 1'b1;
+              dec_error_code_o = ERR_BAD_STATE;
+            end
+          end else if (in_output) begin
+            if (!output_readable_i) begin
+              dec_err_o        = 1'b1;
+              dec_error_code_o = ERR_OUTPUT_NOT_READY;
+            end else if ({1'b0, out_word_idx_o} >= output_words_i) begin
+              dec_err_o        = 1'b1;
+              dec_error_code_o = ERR_BAD_ADDR;
+            end else begin
+              out_rena_o = 1'b1;
+            end
+          end else begin
+            dec_err_o        = 1'b1;
+            dec_error_code_o = ERR_BAD_ADDR;
+          end
+        end
+      endcase
     end
   end
 

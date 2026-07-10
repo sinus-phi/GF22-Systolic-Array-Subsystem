@@ -1,197 +1,164 @@
 `timescale 1ns/1ps
 
-//-----------------------------------------------------------------------------
-// Two-dimensional systolic array wrapper.
-//
-// The array preserves Indrayudh's original movement pattern:
-//   - weights are loaded column-by-column through skewed load pulses,
-//   - activations enter from the left with row-dependent skew,
-//   - partial sums move downward through each column,
-//   - completed bottom-row sums are deskewed before leaving the array.
-//
-// This module is datapath-only.  It does not know about APB, register fields,
-// tile sizes, or firmware sequencing.
-//-----------------------------------------------------------------------------
+module group2_sa (
+    input  logic         clk_i,
+    input  logic         rst_ni,
+    input  logic         clear_i,
 
-module group2_sa #(
-    parameter DATA_WIDTH = 32,
-    parameter ACC_WIDTH = DATA_WIDTH*2,
-    parameter MAC_STAGES = 2,
-    parameter ARRAY_HEIGHT = 4,
-    parameter ARRAY_WIDTH = 4
-)(
-    input wire clk,
-    input wire rst_n,
+    input  logic         weight_valid_i,
+    input  logic [4:0]   weight_col_i,
+    input  logic [127:0] weight_data_i,
 
-    input wire en,
-    input wire [ARRAY_WIDTH-1:0] load, // LSB -> left column, MSB -> right column
+    input  logic         act_valid_i,
+    output logic         act_ready_o,
+    input  logic [4:0]   act_row_i,
+    input  logic [127:0] act_data_i,
 
-    input wire [ARRAY_HEIGHT*DATA_WIDTH-1:0] i_data, // LSB -> top row, MSB -> bottom row
-    output wire [ARRAY_WIDTH*ACC_WIDTH-1:0] o_data, // LSB -> left column, MSB -> right column
-    output wire [ARRAY_WIDTH-1:0] o_overflow
+    output logic         out_valid_o,
+    input  logic         out_ready_i,
+    output logic         out_bank_o,
+    output logic [4:0]   out_row_o,
+    output logic [255:0] out_data_o,
+    output logic         idle_o
 );
 
-genvar h, w;
+  localparam int ARRAY_H = 8;
+  localparam int ARRAY_W = 16;
+  localparam int TAG_STAGES = ARRAY_H + 1;
 
-// Delay the incoming load signal based on the column number.  This matches the
-// horizontal movement of weight data so each column captures the intended
-// weight vector element.
-wire [ARRAY_WIDTH-1:0] load_skewed;
-generate
-    assign load_skewed[0] = load[0];
-    for (w = 0; w < ARRAY_WIDTH-1; w = w + 1) begin : gen_load_skew
-        localparam integer LOAD_DELAY = (w + 1) * MAC_STAGES;
-        integer d;
-        reg load_pipe [0:LOAD_DELAY-1];
+  logic         pending_q;
+  logic         pending_bank_q;
+  logic [4:0]   pending_row_q;
+  logic [127:0] pending_data_q;
+  logic         advance;
+  logic         issue_valid;
 
-        always @(posedge clk) begin
-            if(~rst_n) begin
-                for(d = 0; d < LOAD_DELAY; d = d + 1) begin
-                    load_pipe[d] <= 1'b0;
-                end
-            end
-            else if(en) begin
-                load_pipe[0] <= load[w+1];
-                for(d = 0; d < LOAD_DELAY-1; d = d + 1) begin
-                    load_pipe[d+1] <= load_pipe[d];
-                end
-            end
-        end
-        assign load_skewed[w+1] = load_pipe[LOAD_DELAY-1];
+  logic         act_valid_pipe_q [0:ARRAY_H-2];
+  logic         act_bank_pipe_q  [0:ARRAY_H-2];
+  logic [127:0] act_data_pipe_q  [0:ARRAY_H-2];
+
+  logic         tag_valid_q [0:TAG_STAGES-1];
+  logic         tag_bank_q  [0:TAG_STAGES-1];
+  logic [4:0]   tag_row_q   [0:TAG_STAGES-1];
+
+  logic signed [15:0] pe_sum [0:ARRAY_H-1][0:ARRAY_W-1];
+  logic               pe_valid [0:ARRAY_H-1][0:ARRAY_W-1];
+
+  logic pipe_busy;
+  integer busy_idx;
+  integer seq_idx;
+
+  assign advance     = !out_valid_o || out_ready_i;
+  assign issue_valid = pending_q;
+  assign act_ready_o = advance && (!pending_q || pending_bank_q);
+  assign out_valid_o = tag_valid_q[TAG_STAGES-1];
+  assign out_bank_o  = tag_bank_q[TAG_STAGES-1];
+  assign out_row_o   = tag_row_q[TAG_STAGES-1];
+
+  always_comb begin
+    pipe_busy = pending_q;
+    for (busy_idx = 0; busy_idx < TAG_STAGES; busy_idx = busy_idx + 1) begin
+      pipe_busy = pipe_busy | tag_valid_q[busy_idx];
     end
-endgenerate
+  end
+  assign idle_o = !pipe_busy;
 
-// Delay incoming row data into the proper systolic skew.  The top row consumes
-// the vector immediately; each lower row is delayed by MAC_STAGES more cycles.
-wire [DATA_WIDTH-1:0] data_skewed [ARRAY_HEIGHT-1:0];
-generate
-    assign data_skewed[0] = i_data[0+:DATA_WIDTH];
-    for (h = 0; h < ARRAY_HEIGHT-1; h = h + 1) begin : gen_data_skew
-        localparam integer DATA_DELAY = (h + 1) * MAC_STAGES;
-        integer d;
-        reg [DATA_WIDTH-1:0] data_pipe [0:DATA_DELAY-1];
-        always @(posedge clk) begin
-            if(~rst_n)
-                for(d = 0; d < DATA_DELAY; d = d + 1)
-                    data_pipe[d] <= {DATA_WIDTH{1'b0}};
-
-            else if(en) begin
-                data_pipe[0] <= i_data[(h+1)*DATA_WIDTH+:DATA_WIDTH];
-                for(d = 0; d < DATA_DELAY-1; d = d + 1)
-                    data_pipe[d+1] <= data_pipe[d];
-            end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || clear_i) begin
+      pending_q      <= 1'b0;
+      pending_bank_q <= 1'b0;
+      pending_row_q  <= '0;
+      pending_data_q <= '0;
+      for (seq_idx = 0; seq_idx < ARRAY_H-1; seq_idx = seq_idx + 1) begin
+        act_valid_pipe_q[seq_idx] <= 1'b0;
+        act_bank_pipe_q[seq_idx]  <= 1'b0;
+        act_data_pipe_q[seq_idx]  <= '0;
+      end
+      for (seq_idx = 0; seq_idx < TAG_STAGES; seq_idx = seq_idx + 1) begin
+        tag_valid_q[seq_idx] <= 1'b0;
+        tag_bank_q[seq_idx]  <= 1'b0;
+        tag_row_q[seq_idx]   <= '0;
+      end
+    end else if (advance) begin
+      if (pending_q) begin
+        if (!pending_bank_q) begin
+          pending_bank_q <= 1'b1;
+        end else if (act_valid_i && act_ready_o) begin
+          pending_q      <= 1'b1;
+          pending_bank_q <= 1'b0;
+          pending_row_q  <= act_row_i;
+          pending_data_q <= act_data_i;
+        end else begin
+          pending_q <= 1'b0;
         end
-        assign data_skewed[h+1] = data_pipe[DATA_DELAY-1];
+      end else if (act_valid_i && act_ready_o) begin
+        pending_q      <= 1'b1;
+        pending_bank_q <= 1'b0;
+        pending_row_q  <= act_row_i;
+        pending_data_q <= act_data_i;
+      end
+
+      act_valid_pipe_q[0] <= issue_valid;
+      act_bank_pipe_q[0]  <= pending_bank_q;
+      act_data_pipe_q[0]  <= pending_data_q;
+      for (seq_idx = 1; seq_idx < ARRAY_H-1; seq_idx = seq_idx + 1) begin
+        act_valid_pipe_q[seq_idx] <= act_valid_pipe_q[seq_idx-1];
+        act_bank_pipe_q[seq_idx]  <= act_bank_pipe_q[seq_idx-1];
+        act_data_pipe_q[seq_idx]  <= act_data_pipe_q[seq_idx-1];
+      end
+
+      tag_valid_q[0] <= issue_valid;
+      tag_bank_q[0]  <= pending_bank_q;
+      tag_row_q[0]   <= pending_row_q;
+      for (seq_idx = 1; seq_idx < TAG_STAGES; seq_idx = seq_idx + 1) begin
+        tag_valid_q[seq_idx] <= tag_valid_q[seq_idx-1];
+        tag_bank_q[seq_idx]  <= tag_bank_q[seq_idx-1];
+        tag_row_q[seq_idx]   <= tag_row_q[seq_idx-1];
+      end
     end
-endgenerate
+  end
 
-// Internal PE interconnects.  Data moves horizontally through w_data, load and
-// partial sums move vertically through w_load/w_sum, and overflow follows the
-// same vertical path as its corresponding partial sum.
-wire                     w_load [0:ARRAY_HEIGHT-1][0:ARRAY_WIDTH-1];
-wire [DATA_WIDTH-1:0]    w_data [0:ARRAY_HEIGHT-1][0:ARRAY_WIDTH-1];
-wire [ACC_WIDTH-1:0]     w_sum  [0:ARRAY_HEIGHT-1][0:ARRAY_WIDTH-1];
-wire                     w_overflow [0:ARRAY_HEIGHT-1][0:ARRAY_WIDTH-1];
-wire [ACC_WIDTH-1:0]     output_skewed [0:ARRAY_WIDTH-1];
-wire                     output_overflow_skewed [0:ARRAY_WIDTH-1];
+  generate
+    for (genvar row = 0; row < ARRAY_H; row = row + 1) begin : gen_rows
+      for (genvar col = 0; col < ARRAY_W; col = col + 1) begin : gen_cols
+        wire row_valid;
+        wire row_bank;
+        wire signed [15:0] row_data;
+        wire signed [15:0] incoming_sum;
 
-generate
-    for (h = 0; h < ARRAY_HEIGHT; h = h + 1) begin : gen_row
-        for (w = 0; w < ARRAY_WIDTH; w = w + 1) begin : gen_col
-
-            wire pe_i_load;
-            wire pe_i_overflow;
-            wire [DATA_WIDTH-1:0] pe_i_data;
-            wire [ACC_WIDTH-1:0] pe_i_sum;
-
-            if (h == 0) begin : gen_top_input
-                // Top row starts a new vertical partial-sum chain.
-                assign pe_i_load = load_skewed[w];
-                assign pe_i_overflow = 1'b0;
-                assign pe_i_sum = {ACC_WIDTH{1'b0}};
-            end
-            else begin : gen_vertical_input
-                // Non-top rows receive load/partial-sum state from the PE above.
-                assign pe_i_load = w_load[h-1][w];
-                assign pe_i_overflow = w_overflow[h-1][w];
-                assign pe_i_sum = w_sum[h-1][w];
-            end
-
-            if (w == 0) begin : gen_left_input
-                // Leftmost column receives the externally skewed activation data.
-                assign pe_i_data = data_skewed[h];
-            end
-            else begin : gen_horizontal_input
-                // Other columns receive the activation data forwarded from the
-                // previous PE in the same row.
-                assign pe_i_data = w_data[h][w-1];
-            end
-
-            group2_pe #(
-                .DATA_WIDTH(DATA_WIDTH),
-                .ACC_WIDTH(ACC_WIDTH),
-                .MAC_STAGES(MAC_STAGES)
-            ) pe_inst (
-                .clk(clk),
-                .rst_n(rst_n),
-                .en(en),
-
-                .i_load(pe_i_load),
-                .i_overflow(pe_i_overflow),
-                .o_load(w_load[h][w]),
-                .o_overflow(w_overflow[h][w]),
-
-                .i_data(pe_i_data),
-                .o_data(w_data[h][w]),
-
-                .i_sum(pe_i_sum),
-                .o_sum(w_sum[h][w])
-            );
-
-            if (h == ARRAY_HEIGHT - 1) begin : gen_output
-                assign output_skewed[w] = w_sum[h][w];
-                assign output_overflow_skewed[w] = w_overflow[h][w];
-            end
+        if (row == 0) begin : gen_first_row
+          assign row_valid    = issue_valid;
+          assign row_bank     = pending_bank_q;
+          assign row_data     = pending_data_q[row*16 +: 16];
+          assign incoming_sum = 16'sd0;
+        end else begin : gen_later_row
+          assign row_valid    = act_valid_pipe_q[row-1];
+          assign row_bank     = act_bank_pipe_q[row-1];
+          assign row_data     = act_data_pipe_q[row-1][row*16 +: 16];
+          assign incoming_sum = pe_sum[row-1][col];
         end
+
+        group2_pe i_pe (
+          .clk_i         (clk_i),
+          .rst_ni        (rst_ni),
+          .clear_i       (clear_i),
+          .advance_i     (advance),
+          .weight_load_i (weight_valid_i && (weight_col_i[3:0] == col[3:0])),
+          .weight_bank_i (weight_col_i[4]),
+          .weight_i      (weight_data_i[row*16 +: 16]),
+          .data_valid_i  (row_valid),
+          .data_bank_i   (row_bank),
+          .data_i        (row_data),
+          .sum_i         (incoming_sum),
+          .sum_valid_o   (pe_valid[row][col]),
+          .sum_o         (pe_sum[row][col])
+        );
+      end
     end
-endgenerate
 
-// Delay earlier columns so all output lanes correspond to the same wavefront.
-// The original array only deskewed o_data.  Saturation adds an overflow sideband,
-// so the flag is deskewed with the same delay to stay aligned with its result.
-generate
-    for (w = 0; w < ARRAY_WIDTH; w = w + 1) begin : gen_output_deskew
-        if (w == ARRAY_WIDTH - 1) begin : gen_no_delay
-            assign o_data[ACC_WIDTH*w +: ACC_WIDTH] = output_skewed[w];
-            assign o_overflow[w] = output_overflow_skewed[w];
-        end
-        else begin : gen_delay
-            localparam integer OUTPUT_DELAY = (ARRAY_WIDTH - 1 - w) * MAC_STAGES;
-            integer d;
-            reg [ACC_WIDTH-1:0] output_pipe [0:OUTPUT_DELAY-1];
-            reg overflow_pipe [0:OUTPUT_DELAY-1];
-
-            always @(posedge clk) begin
-                if (~rst_n) begin
-                    for (d = 0; d < OUTPUT_DELAY; d = d + 1) begin
-                        output_pipe[d] <= {ACC_WIDTH{1'b0}};
-                        overflow_pipe[d] <= 1'b0;
-                    end
-                end
-                else if (en) begin
-                    output_pipe[0] <= output_skewed[w];
-                    overflow_pipe[0] <= output_overflow_skewed[w];
-                    for (d = 0; d < OUTPUT_DELAY-1; d = d + 1) begin
-                        output_pipe[d+1] <= output_pipe[d];
-                        overflow_pipe[d+1] <= overflow_pipe[d];
-                    end
-                end
-            end
-
-            assign o_data[ACC_WIDTH*w +: ACC_WIDTH] = output_pipe[OUTPUT_DELAY-1];
-            assign o_overflow[w] = overflow_pipe[OUTPUT_DELAY-1];
-        end
+    for (genvar col = 0; col < ARRAY_W; col = col + 1) begin : gen_output
+      assign out_data_o[col*16 +: 16] = pe_sum[ARRAY_H-1][col];
     end
-endgenerate
+  endgenerate
 
 endmodule

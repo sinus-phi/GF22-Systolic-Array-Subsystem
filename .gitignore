@@ -26,3 +26,5 @@ syn/rtl_files.list
 syn/search_path.env
 syn/.bender_rtl_files.list
 V2_Migration_Improvement/
+Final_Integration/
+indra_new_branch/

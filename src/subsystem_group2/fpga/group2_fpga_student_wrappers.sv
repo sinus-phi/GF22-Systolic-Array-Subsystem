@@ -125,6 +125,10 @@ module student_wrapper_1 #(
 
   logic group2_clk;
   logic group2_irq;
+  logic [31:0] group2_prdata;
+  logic        group2_pready;
+  logic        group2_pslverr;
+  logic        partial_write;
 
   tc_clk_gating i_group2_clk_gate (
     .clk_i     (clk_in),
@@ -136,14 +140,15 @@ module student_wrapper_1 #(
   group2_topmodule i_group2_topmodule (
     .PADDR        (PADDR[15:0]),
     .PENABLE      (PENABLE),
-    .PSEL         (PSEL),
+    .PSEL         (PSEL && !partial_write),
     .PWDATA       (PWDATA),
     .PWRITE       (PWRITE),
-    .PRDATA       (PRDATA),
-    .PREADY       (PREADY),
-    .PSLVERR      (PSLVERR),
+    .PRDATA       (group2_prdata),
+    .PREADY       (group2_pready),
+    .PSLVERR      (group2_pslverr),
     .clk_i        (group2_clk),
     .rst_ni       (reset_n),
+    .wrapper_fault_i(partial_write && PENABLE),
     .irq_en_i     (irq_en),
     .pmod_gpi     (pmod_gpi),
     .irq_o        (group2_irq),
@@ -151,9 +156,13 @@ module student_wrapper_1 #(
     .pmod_gpio_oe (pmod_gpio_oe)
   );
 
+  assign partial_write = PSEL && PWRITE && (PSTRB != 4'b1111);
+  assign PRDATA  = partial_write ? 32'd0 : group2_prdata;
+  assign PREADY  = partial_write ? 1'b1 : group2_pready;
+  assign PSLVERR = partial_write ? 1'b1 : group2_pslverr;
   assign irq = group2_irq & irq_en;
 
-  wire _unused = &{1'b0, PADDR[31:16], PSTRB, 1'b0};
+  wire _unused = &{1'b0, PADDR[31:16], 1'b0};
 
 endmodule
 

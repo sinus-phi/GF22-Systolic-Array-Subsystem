@@ -16,8 +16,9 @@ ELF_WAIT_MS="${ELF_WAIT_MS:-12000}"
 FULL_GEMM_ARGS="${FULL_GEMM_ARGS:-}"
 RUN_STAMP="${RUN_STAMP:-$(date +%F_%H%M%S)}"
 LOG_DIR="${LOG_DIR:-$REPO_DIR/build/fpga/group2_hw_workflow/$RUN_STAMP}"
+BUILD_DIR="${BUILD_DIR:-$REPO_DIR/build/group2_final_synth}"
 
-BITSTREAM_PATH="$REPO_DIR/build/fpga/z2_course_io_ft232h_nucleo_group2/didactic-z2_course_io_ft232h_nucleo_group2.runs/impl_1/DidacticZ2_FT232H_Nucleo.bit"
+BITSTREAM_PATH="${BITSTREAM_PATH:-$BUILD_DIR/fpga/z2_course_io_ft232h_nucleo_group2/didactic-z2_course_io_ft232h_nucleo_group2.runs/impl_1/DidacticZ2_FT232H_Nucleo.bit}"
 OPENOCD_CFG="$FPGA_DIR/utils/openocd-didactic-ft232h-z2.cfg"
 PROGRAM_TCL="$FPGA_DIR/scripts/program_z2_course_io_ft232h_nucleo.tcl"
 UART_CAPTURE="$SCRIPT_DIR/uart_capture_until.py"
@@ -73,16 +74,17 @@ Useful examples:
 
 Environment overrides:
   EDU_ENV, VIVADO_SETTINGS, UART_DEV, UART_BAUD, TESTCASES, UART_TIMEOUT,
-  FULL_GEMM_TIMEOUT, ELF_WAIT_MS, LOG_DIR, PASS_REGEX, FAIL_REGEX,
-  FULL_GEMM_ARGS
+  FULL_GEMM_TIMEOUT, ELF_WAIT_MS, LOG_DIR, BUILD_DIR, BITSTREAM_PATH,
+  PASS_REGEX, FAIL_REGEX, FULL_GEMM_ARGS
 
 Note:
   UART is printed in real time.
 
   group2_full_gemm_headers is the preferred full GEMM hardware testcase. It
   generates one ELF per fpga/sw/gemm/include/array_mode*.h header. Each ELF holds
-  one complete 32x32x32 GEMM dataset and drives GROUP2 through 8x8x8 hardware
-  tiles internally. It prints one FULL_GEMM_DONE line when that header finishes.
+  one complete 32x32x32 GEMM dataset and drives the 8x16 GROUP2 array through
+  four K=8 GEMM/GACC tiles. It prints one FULL_GEMM_DONE line when that header
+  finishes.
 
   To limit or tweak the full-header run, pass options through FULL_GEMM_ARGS,
   for example:
@@ -235,10 +237,7 @@ ensure_bitstream() {
 
   if [[ "$REBUILD_BITSTREAM" -eq 1 || ! -f "$BITSTREAM_PATH" ]]; then
     log "Building PYNQ-Z2 GROUP2 bitstream"
-    (
-      cd "$FPGA_DIR"
-      make -f Makefile z2_course_io_ft232h_nucleo_group2
-    )
+    "$SCRIPT_DIR/build_group2_z2_bitstream.sh" --build-dir "$BUILD_DIR"
   fi
 }
 
@@ -391,6 +390,7 @@ main() {
   log "Starting GROUP2 hardware workflow"
   printf '[INFO] Repo     : %s\n' "$REPO_DIR"
   printf '[INFO] Log dir  : %s\n' "$LOG_DIR"
+  printf '[INFO] Bitstream: %s\n' "$BITSTREAM_PATH"
   printf '[INFO] UART     : %s @ %s\n' "$UART_DEV" "$UART_BAUD"
 
   source_env

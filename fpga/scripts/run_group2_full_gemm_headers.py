@@ -23,7 +23,7 @@ BITS_TO_PRECISION = {
     4: "GROUP2_SA_DTYPE_INT4",
     8: "GROUP2_SA_DTYPE_INT8",
     16: "GROUP2_SA_DTYPE_INT16",
-    32: "GROUP2_SA_DTYPE_INT32",
+    32: "GROUP2_SA_DTYPE_INT16",
 }
 
 EXPECTED_INVALID_HEADERS = {
@@ -36,203 +36,113 @@ C_TEMPLATE = r'''#include <stdint.h>
 #include "group2_uart_print.h"
 #include "@HEADER_NAME@"
 
-#define TILE_M 8u
-#define TILE_N 8u
-#define TILE_K 8u
 #define ACT_PRECISION @ACT_PRECISION@
 #define WEIGHT_PRECISION @WEIGHT_PRECISION@
 #define EXPECTED_INVALID @EXPECTED_INVALID@u
 #define HEADER_TOKEN "@HEADER_TOKEN@"
+#define ACT_WORDS_PER_VECTOR @ACT_WORDS_PER_VECTOR@u
+#define WEIGHT_WORDS_PER_VECTOR @WEIGHT_WORDS_PER_VECTOR@u
+#define ACT_WORDS_PER_TILE (M_d * ACT_WORDS_PER_VECTOR)
+#define WEIGHT_WORDS_PER_TILE (GROUP2_SA_LOGICAL_N * WEIGHT_WORDS_PER_VECTOR)
 
-static int64_t accum[M_d * N_d];
+@PACKED_ARRAYS@
 
 static void short_delay(void)
 {
-  for (volatile uint32_t i = 0; i < 1000u; ++i) {
-    asm volatile("nop");
-  }
+  for (volatile uint32_t i = 0; i < 1000u; ++i) asm volatile("nop");
 }
 
-static void print_i64_hex(int64_t value)
-{
-  uint64_t bits = (uint64_t)value;
-  group2_print_hex32((uint32_t)(bits >> 32));
-  group2_print_char('_');
-  group2_print_hex32((uint32_t)bits);
-}
-
-static void clear_accum(void)
-{
-  for (uint32_t i = 0u; i < (uint32_t)(M_d * N_d); ++i) {
-    accum[i] = 0;
-  }
-}
-
-static int wait_or_report(uint32_t expected_phase, uint32_t timeout, const char *tag)
+static int wait_phase(uint32_t phase, const char *tag)
 {
   uint32_t status = 0u;
-  if (group2_sa_wait_phase(expected_phase, timeout, &status) == 0) {
-    return 0;
-  }
-
-  group2_print_str("FULL_GEMM_ERROR,");
-  group2_print_str(HEADER_TOKEN);
-  group2_print_str(",");
-  group2_print_str(tag);
-  group2_print_str(",status=");
-  group2_print_hex32(status);
-  group2_print_str("\r\n");
+  if (group2_sa_wait_phase(phase, 60000u, &status) == 0) return 0;
+  group2_print_str("FULL_GEMM_ERROR,"); group2_print_str(HEADER_TOKEN);
+  group2_print_str(","); group2_print_str(tag); group2_print_str(",status=");
+  group2_print_hex32(status); group2_print_str("\r\n");
   return 1;
 }
 
-static int wait_output_or_report(const char *tag)
+static int validate_inputs(void)
 {
-  uint32_t status = 0u;
-  if (group2_sa_wait_output_valid(60000u, &status) != 0) {
-    group2_print_str("FULL_GEMM_ERROR,");
-    group2_print_str(HEADER_TOKEN);
-    group2_print_str(",");
-    group2_print_str(tag);
-    group2_print_str(",status=");
-    group2_print_hex32(status);
-    group2_print_str("\r\n");
-    return 1;
-  }
-
-  if (group2_sa_status_output_words(status) != (TILE_M * TILE_N * 2u)) {
-    group2_print_str("FULL_GEMM_ERROR,");
-    group2_print_str(HEADER_TOKEN);
-    group2_print_str(",bad_output_words,status=");
-    group2_print_hex32(status);
-    group2_print_str("\r\n");
-    return 1;
-  }
-
+  for (uint32_t i = 0u; i < (uint32_t)(M_d * K_d); ++i)
+    if (!group2_sa_value_fits((int32_t)input_unpacked[i], ACT_PRECISION)) return -1;
+  for (uint32_t i = 0u; i < (uint32_t)(N_d * K_d); ++i)
+    if (!group2_sa_value_fits((int32_t)weights_unpacked[i], WEIGHT_PRECISION)) return -1;
+  for (uint32_t n = 0u; n < N_d; ++n)
+    if (bias[n] < -32768 || bias[n] > 32767) return -1;
   return 0;
 }
 
-static int run_tile(uint32_t n_base, uint32_t k_base)
+static int run_k_tile(uint32_t k_base, uint32_t first)
 {
-  int errors = 0;
-  int32_t vec[TILE_K];
+  uint32_t tile = k_base / GROUP2_SA_K_TILE;
 
-  uint32_t cfg = group2_sa_make_config(ACT_PRECISION, WEIGHT_PRECISION,
-                                       TILE_M, TILE_N, TILE_K, M_d / TILE_M);
-  group2_sa_write32(GROUP2_SA_OFF_CONFIG, cfg);
-  group2_sa_write32(GROUP2_SA_OFF_CONTROL, GROUP2_SA_CTRL_LOAD_WEIGHTS);
+  group2_sa_write32(GROUP2_SA_OFF_CONTROL,
+                    first ? GROUP2_SA_CTRL_START_GEMM : GROUP2_SA_CTRL_START_GACC);
+  if (wait_phase(GROUP2_SA_PH_WEIGHT, "weight_phase")) return 1;
 
-  if (wait_or_report(GROUP2_SA_PH_LOAD_WEIGHTS, 12000u, "load_weight_phase") != 0) {
-    return 1;
-  }
+  if (group2_sa_stream_weight_packed(
+          &packed_weight_words[tile * WEIGHT_WORDS_PER_TILE],
+          WEIGHT_WORDS_PER_TILE)) return 1;
+  if (wait_phase(GROUP2_SA_PH_ACTIVATION, "activation_phase")) return 1;
 
-  for (uint32_t n = 0u; n < TILE_N; ++n) {
-    for (uint32_t k = 0u; k < TILE_K; ++k) {
-      vec[k] = (int32_t)weights_unpacked[(n_base + n) * K_d + (k_base + k)];
-    }
-    group2_sa_stream_weight_vector(vec, WEIGHT_PRECISION, TILE_K);
-  }
-
-  if (wait_or_report(GROUP2_SA_PH_BATCH_COMPUTE, 16000u, "batch_compute_phase") != 0) {
-    return 1;
-  }
-
-  for (uint32_t m_base = 0u; m_base < M_d; m_base += TILE_M) {
-    for (uint32_t m = 0u; m < TILE_M; ++m) {
-      for (uint32_t k = 0u; k < TILE_K; ++k) {
-        vec[k] = (int32_t)input_unpacked[(m_base + m) * K_d + (k_base + k)];
-      }
-      group2_sa_stream_activation_vector(vec, ACT_PRECISION, TILE_K);
-    }
-
-    if (wait_output_or_report("output_valid") != 0) {
-      return 1;
-    }
-
-    for (uint32_t m = 0u; m < TILE_M; ++m) {
-      for (uint32_t n = 0u; n < TILE_N; ++n) {
-        uint32_t dst = (m_base + m) * N_d + (n_base + n);
-        accum[dst] += group2_sa_read_output_elem(m, n, TILE_N);
-      }
-    }
-
-    group2_sa_release_output();
-    if ((m_base + TILE_M) < M_d) {
-      errors += wait_or_report(GROUP2_SA_PH_BATCH_COMPUTE, 16000u, "next_batch_phase");
-    } else {
-      errors += wait_or_report(GROUP2_SA_PH_IDLE, 16000u, "idle_phase");
-    }
-
-    if (errors != 0) {
-      return errors;
-    }
-  }
-
-  return errors;
+  if (group2_sa_stream_activation_packed(
+          &packed_activation_words[tile * ACT_WORDS_PER_TILE],
+          ACT_WORDS_PER_TILE)) return 1;
+  return wait_phase(GROUP2_SA_PH_OUTPUT, "output_phase");
 }
 
-static int run_all_tiles(void)
+static int run_gemm(void)
 {
-  int errors = 0;
-
-  for (uint32_t n_base = 0u; n_base < N_d; n_base += TILE_N) {
-    for (uint32_t k_base = 0u; k_base < K_d; k_base += TILE_K) {
-      errors += run_tile(n_base, k_base);
-      if (errors != 0) {
-        group2_sa_soft_reset();
-        return errors;
-      }
-    }
+  for (uint32_t pair = 0u; pair < 16u; ++pair) {
+    int16_t lo = (pair * 2u < N_d) ? (int16_t)bias[pair * 2u] : 0;
+    int16_t hi = (pair * 2u + 1u < N_d) ? (int16_t)bias[pair * 2u + 1u] : 0;
+    group2_sa_write_bias_pair(pair, lo, hi);
   }
+  group2_sa_write32(GROUP2_SA_OFF_CONFIG,
+                    group2_sa_make_config(ACT_PRECISION, WEIGHT_PRECISION, M_d, 1u));
 
-  return errors;
+  uint32_t first = 1u;
+  for (uint32_t k = 0u; k < K_d; k += GROUP2_SA_K_TILE) {
+    if (run_k_tile(k, first)) return 1;
+    first = 0u;
+  }
+  return 0;
 }
 
 static int compare_result(void)
 {
   int errors = 0;
-
   for (uint32_t m = 0u; m < M_d; ++m) {
-    for (uint32_t n = 0u; n < N_d; ++n) {
-      uint32_t idx = m * N_d + n;
-      C_TYPE actual = (C_TYPE)(accum[idx] + (int64_t)bias[n]);
-      C_TYPE expected = golden[idx];
-
-      if (actual != expected) {
-        if (errors < 8) {
-          group2_print_str("FULL_GEMM_MISMATCH,");
-          group2_print_str(HEADER_TOKEN);
-          group2_print_str(",m=");
-          group2_print_i32((int32_t)m);
-          group2_print_str(",n=");
-          group2_print_i32((int32_t)n);
-          group2_print_str(",golden=");
-          print_i64_hex((int64_t)expected);
-          group2_print_str(",actual=");
-          print_i64_hex((int64_t)actual);
-          group2_print_str("\r\n");
+    for (uint32_t pair = 0u; pair < (N_d + 1u) / 2u; ++pair) {
+      uint32_t word = group2_sa_read_output_word(m, pair);
+      for (uint32_t lane = 0u; lane < 2u; ++lane) {
+        uint32_t n = pair * 2u + lane;
+        if (n >= N_d) continue;
+        uint16_t expected = (uint16_t)bias[n];
+        for (uint32_t k = 0u; k < K_d; ++k) {
+          int16_t a = (int16_t)input_unpacked[m * K_d + k];
+          int16_t w = (int16_t)weights_unpacked[n * K_d + k];
+          expected = group2_sa_add_wrap16(expected, group2_sa_mul_wrap16(a, w));
         }
-        errors++;
+        uint16_t actual = (uint16_t)(lane ? group2_sa_output_word_high(word)
+                                          : group2_sa_output_word_low(word));
+        if (actual != expected) errors++;
       }
     }
   }
-
   return errors;
 }
 
-static void print_done(int runtime_errors, int mismatches)
+static void print_done(int runtime_errors, int mismatches, int invalid_input)
 {
-  int pass = (runtime_errors == 0) && ((mismatches == 0) || (EXPECTED_INVALID != 0u));
-
-  group2_print_str("FULL_GEMM_DONE,");
-  group2_print_str(HEADER_TOKEN);
-  group2_print_str(",runtime_errors=");
-  group2_print_i32(runtime_errors);
-  group2_print_str(",mismatches=");
-  group2_print_i32(mismatches);
-  group2_print_str(",expected_invalid=");
-  group2_print_i32((int32_t)EXPECTED_INVALID);
-  group2_print_str(",");
-  group2_print_str(pass ? "PASS" : "FAIL");
+  int pass = (runtime_errors == 0) &&
+             ((invalid_input && EXPECTED_INVALID) || (!invalid_input && mismatches == 0));
+  group2_print_str("FULL_GEMM_DONE,"); group2_print_str(HEADER_TOKEN);
+  group2_print_str(",runtime_errors="); group2_print_i32(runtime_errors);
+  group2_print_str(",mismatches="); group2_print_i32(mismatches);
+  group2_print_str(",expected_invalid="); group2_print_i32((int32_t)EXPECTED_INVALID);
+  group2_print_str(","); group2_print_str(pass ? "PASS" : "FAIL");
   group2_print_str("\r\n");
 }
 
@@ -240,33 +150,23 @@ int main(void)
 {
   int runtime_errors = 0;
   int mismatches = 0;
-
+  int invalid_input;
   group2_print_init();
-  group2_print_str("\r\nFULL_GEMM_START,");
-  group2_print_str(HEADER_TOKEN);
+  group2_print_str("\r\nFULL_GEMM_START,"); group2_print_str(HEADER_TOKEN);
   group2_print_str("\r\n");
 
-  if (((M_d % TILE_M) != 0) || ((N_d % TILE_N) != 0) || ((K_d % TILE_K) != 0)) {
-    group2_print_str("FULL_GEMM_ERROR,");
-    group2_print_str(HEADER_TOKEN);
-    group2_print_str(",bad_dimensions\r\n");
-    print_done(1, 0);
-    while (1) {}
+  invalid_input = validate_inputs() != 0;
+  if (M_d == 0 || M_d > GROUP2_SA_MAX_M || N_d == 0 ||
+      N_d > GROUP2_SA_LOGICAL_N || K_d == 0) runtime_errors = 1;
+
+  if (!invalid_input && runtime_errors == 0) {
+    group2_sa_disable(); short_delay(); group2_sa_enable(); short_delay();
+    group2_sa_soft_reset();
+    runtime_errors = run_gemm();
+    if (runtime_errors == 0) mismatches = compare_result();
+    if (runtime_errors == 0) group2_sa_release_context();
   }
-
-  clear_accum();
-  group2_sa_disable();
-  short_delay();
-  group2_sa_enable();
-  short_delay();
-  group2_sa_soft_reset();
-
-  runtime_errors = run_all_tiles();
-  if (runtime_errors == 0) {
-    mismatches = compare_result();
-  }
-
-  print_done(runtime_errors, mismatches);
+  print_done(runtime_errors, mismatches, invalid_input);
   while (1) {}
 }
 '''
@@ -327,6 +227,67 @@ def cast_signed(value: int, width: int) -> int:
 def header_range_is_valid(values: list[int], width: int) -> bool:
     lo, hi = signed_range(width)
     return min(values) >= lo and max(values) <= hi
+
+
+def effective_precision_bits(width: int) -> int:
+    return 16 if width == 32 else width
+
+
+def pack_vector_words(values: list[int], width: int) -> list[int]:
+    if len(values) != 8 or width not in (4, 8, 16):
+        raise ValueError(f"bad packed vector: len={len(values)} width={width}")
+    elems_per_word = 32 // width
+    mask = (1 << width) - 1
+    words: list[int] = []
+    for base in range(0, 8, elems_per_word):
+        word = 0
+        for lane, value in enumerate(values[base:base + elems_per_word]):
+            word |= (value & mask) << (lane * width)
+        words.append(word)
+    return words
+
+
+def format_u32_array(name: str, values: list[int]) -> str:
+    lines = []
+    for base in range(0, len(values), 8):
+        words = ", ".join(f"0x{word:08x}u" for word in values[base:base + 8])
+        lines.append(f"  {words},")
+    return f"static uint32_t {name}[{len(values)}] = {{\n" + "\n".join(lines) + "\n};"
+
+
+def make_packed_arrays(header: Path, act_bits: int, weight_bits: int) -> tuple[str, int, int]:
+    rows_m = parse_define_int(header, "M_d")
+    inner_k = parse_define_int(header, "K_d")
+    cols_n = parse_define_int(header, "N_d")
+    activations = parse_c_array(header, "input_unpacked")
+    weights = parse_c_array(header, "weights_unpacked")
+    if len(activations) != rows_m * inner_k or len(weights) != cols_n * inner_k:
+        raise ValueError(f"array size mismatch in {header.name}")
+
+    act_width = effective_precision_bits(act_bits)
+    weight_width = effective_precision_bits(weight_bits)
+    packed_activations: list[int] = []
+    packed_weights: list[int] = []
+
+    for k_base in range(0, inner_k, 8):
+        for n in range(32):
+            vector = [
+                weights[n * inner_k + k] if n < cols_n and k < inner_k else 0
+                for k in range(k_base, k_base + 8)
+            ]
+            packed_weights.extend(pack_vector_words(vector, weight_width))
+        for m in range(rows_m):
+            vector = [
+                activations[m * inner_k + k] if k < inner_k else 0
+                for k in range(k_base, k_base + 8)
+            ]
+            packed_activations.extend(pack_vector_words(vector, act_width))
+
+    arrays = "\n\n".join((
+        format_u32_array("packed_weight_words", packed_weights),
+        format_u32_array("packed_activation_words", packed_activations),
+    ))
+    return arrays, act_width // 4, weight_width // 4
 
 
 def sanitize_token(name: str) -> str:
@@ -395,12 +356,16 @@ SECTIONS
 
 def make_full_source(header: Path, token: str, act_bits: int, weight_bits: int, expected_invalid: bool) -> str:
     source = C_TEMPLATE
+    packed_arrays, act_words, weight_words = make_packed_arrays(header, act_bits, weight_bits)
     replacements = {
         "@HEADER_NAME@": c_quote(header.name),
         "@HEADER_TOKEN@": c_quote(token),
         "@ACT_PRECISION@": BITS_TO_PRECISION[act_bits],
         "@WEIGHT_PRECISION@": BITS_TO_PRECISION[weight_bits],
         "@EXPECTED_INVALID@": "1" if expected_invalid else "0",
+        "@ACT_WORDS_PER_VECTOR@": str(act_words),
+        "@WEIGHT_WORDS_PER_VECTOR@": str(weight_words),
+        "@PACKED_ARRAYS@": packed_arrays,
     }
     for key, value in replacements.items():
         source = source.replace(key, value)
@@ -519,22 +484,49 @@ def halt_riscv(openocd_cfg: Path) -> None:
     ], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def load_and_run_elf(openocd_cfg: Path, elf_path: Path, wait_ms: int, log_path: Path) -> None:
-    run_command([
-        "openocd",
-        "-f",
-        str(openocd_cfg),
-        "-c",
-        "halt",
-        "-c",
-        f"load_image {elf_path}",
-        "-c",
-        "resume 0x01000080",
-        "-c",
-        f"sleep {wait_ms}",
-        "-c",
-        "shutdown",
-    ], cwd=openocd_cfg.parents[1], log_path=log_path)
+def load_and_run_elf(
+    openocd_cfg: Path,
+    elf_path: Path,
+    wait_ms: int,
+    log_path: Path,
+    max_attempts: int,
+) -> None:
+    failures: list[str] = []
+    for attempt in range(1, max_attempts + 1):
+        attempt_log = log_path.with_name(
+            f"{log_path.stem}.attempt{attempt}{log_path.suffix}"
+        )
+        proc = run_command([
+            "openocd",
+            "-f",
+            str(openocd_cfg),
+            "-c",
+            "halt",
+            "-c",
+            f"load_image {elf_path}",
+            "-c",
+            f"verify_image {elf_path}",
+            "-c",
+            "resume 0x01000080",
+            "-c",
+            f"sleep {wait_ms}",
+            "-c",
+            "shutdown",
+        ], cwd=openocd_cfg.parents[1], log_path=attempt_log, check=False)
+
+        log_text = attempt_log.read_text(encoding="utf-8", errors="replace")
+        verified = bool(re.search(r"^verified\s+\d+\s+bytes", log_text, flags=re.M))
+        if proc.returncode == 0 and verified:
+            shutil.copyfile(attempt_log, log_path)
+            return
+
+        failures.append(
+            f"attempt {attempt}: rc={proc.returncode}, verified={int(verified)}, "
+            f"log={attempt_log}"
+        )
+        time.sleep(0.25)
+
+    raise RuntimeError("OpenOCD ELF load/verify failed: " + "; ".join(failures))
 
 
 def run_full_elf(
@@ -547,6 +539,7 @@ def run_full_elf(
     openocd_cfg: Path,
     elf_path: Path,
     wait_ms: int,
+    openocd_retries: int,
     log_prefix: Path,
 ) -> None:
     uart_log = log_prefix.with_suffix(".uart.log")
@@ -575,7 +568,13 @@ def run_full_elf(
         time.sleep(0.25)
         reset_nucleo(nucleo_log)
         time.sleep(0.25)
-        load_and_run_elf(openocd_cfg, elf_path, wait_ms, openocd_log)
+        load_and_run_elf(
+            openocd_cfg,
+            elf_path,
+            wait_ms,
+            openocd_log,
+            openocd_retries,
+        )
         rc = capture.wait()
     except Exception:
         capture.kill()
@@ -683,6 +682,7 @@ def run_header(
             openocd_cfg=args.openocd_cfg,
             elf_path=elf_path,
             wait_ms=args.elf_wait_ms,
+            openocd_retries=args.openocd_retries,
             log_prefix=header_dir / token,
         )
 
@@ -749,6 +749,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--uart-baud", type=int, default=9600)
     parser.add_argument("--header-timeout", type=int, default=90)
     parser.add_argument("--elf-wait-ms", type=int, default=12000)
+    parser.add_argument("--openocd-retries", type=int, default=3,
+                        help="Retry an ELF load unless OpenOCD verifies every byte")
     parser.add_argument("--openocd-cfg", type=Path,
                         default=repo_default / "fpga" / "utils" / "openocd-didactic-ft232h-z2.cfg")
     parser.add_argument("--uart-capture", type=Path,
@@ -765,6 +767,10 @@ def main() -> int:
     args.log_dir = args.log_dir.resolve()
     args.openocd_cfg = args.openocd_cfg.resolve()
     args.uart_capture = args.uart_capture.resolve()
+
+    if args.openocd_retries < 1:
+        print("ERROR: --openocd-retries must be at least 1", file=sys.stderr)
+        return 2
 
     if shutil.which(args.cc) is None:
         print(f"ERROR: compiler not found: {args.cc}", file=sys.stderr)

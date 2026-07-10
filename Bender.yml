@@ -130,6 +130,7 @@ sources:
     - src/subsystem_group2/rtl/group2_input_frontend.sv
     - src/subsystem_group2/rtl/group2_pe.sv
     - src/subsystem_group2/rtl/group2_sa.sv
+    - src/subsystem_group2/rtl/group2_sram_32x128.sv
     - src/subsystem_group2/rtl/group2_output_buffer.sv
     - src/subsystem_group2/rtl/group2_topmodule.sv
     - src/subsystem_group2/fpga/group2_fpga_student_wrappers.sv

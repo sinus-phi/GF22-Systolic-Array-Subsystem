@@ -1,189 +1,106 @@
 `timescale 1ns/1ps
 
-//-----------------------------------------------------------------------------
-// Packed APB-word to SA-vector frontend.
-//
-// This block has no transaction FSM.  group2_sa_ctrl owns the global state:
-// this block only unpacks signed elements, fills one ARRAY_HEIGHT vector,
-// and emits one SA push pulse when the vector is full.
-//
-// Firmware writes packed APB words.  This block turns them into signed 32-bit
-// lanes so the PE datapath can stay precision-agnostic.
-//-----------------------------------------------------------------------------
+module group2_input_frontend (
+    input  logic         clk_i,
+    input  logic         rst_ni,
+    input  logic         clear_i,
+    input  logic [1:0]   precision_i,
 
-module group2_input_frontend #(
-    parameter int DATA_WIDTH = 32,
-    parameter int ARRAY_HEIGHT = 8,
-    parameter int ARRAY_WIDTH = 8,
-    localparam int BUFF_CNTR_WIDTH = $clog2(ARRAY_HEIGHT + 1)
-) (
-    input  logic                         clk_i,
-    input  logic                         rst_ni,
-    input  logic                         clear_i,
+    input  logic         word_valid_i,
+    output logic         word_ready_o,
+    input  logic [31:0]  word_i,
 
-    input  logic                         weight_start_i,
-    input  logic                         activation_start_i,
-    input  logic [2:0]                   phase_i,
-    input  logic [1:0]                   weight_precision_i,
-    input  logic [1:0]                   activation_precision_i,
-    input  logic [31:0]                  tile_k_i,
-    input  logic [31:0]                  word_i,
-    input  logic                         weight_word_valid_i,
-    input  logic                         activation_word_valid_i,
-
-    output logic                         vector_valid_o,
-    output logic [ARRAY_HEIGHT*DATA_WIDTH-1:0] vector_data_o,
-    output logic [ARRAY_WIDTH-1:0]       sa_load_o
+    output logic         vector_valid_o,
+    input  logic         vector_ready_i,
+    output logic [127:0] vector_data_o
 );
 
   import group2_pkg::*;
 
-  localparam logic [1:0] DTYPE_INT4  = 2'd0;
-  localparam logic [1:0] DTYPE_INT8  = 2'd1;
-  localparam logic [1:0] DTYPE_INT16 = 2'd2;
-  localparam logic [BUFF_CNTR_WIDTH-1:0] FULL_VECTOR_ELEMS = ARRAY_HEIGHT;
+  logic [31:0] fifo_q [0:1];
+  logic        fifo_rd_q;
+  logic        fifo_wr_q;
+  logic [1:0]  fifo_count_q;
+  logic [2:0]  word_index_q;
+  logic [127:0] vector_q;
+  logic         vector_valid_q;
 
-  logic [BUFF_CNTR_WIDTH-1:0] fill_count_q;
-  logic [$clog2(ARRAY_WIDTH+1)-1:0] weight_vec_idx_q;
-  logic [DATA_WIDTH-1:0] input_buffer_q [0:ARRAY_HEIGHT-1];
-  logic [DATA_WIDTH-1:0] decoded_elem [0:7];
-  logic [3:0] elems_this_word;
-  logic [BUFF_CNTR_WIDTH-1:0] active_elem_count;
-  logic [BUFF_CNTR_WIDTH:0] fill_after_word;
-  logic [1:0] active_precision;
-  logic word_valid;
-  logic weight_mode;
+  logic push;
+  logic pop;
+  logic [2:0] words_needed;
+  logic [31:0] head_word;
+  logic [127:0] vector_next;
 
-  integer idx;
-  integer dec_idx;
-  integer elem_idx;
+  integer lane;
 
-  assign weight_mode      = (phase_i == PH_LOAD_WEIGHTS);
-  assign word_valid       = weight_word_valid_i | activation_word_valid_i;
-  // Weight and activation streams can use different precisions.  The accepted
-  // word type decides which unpack rule is used for the current APB word.
-  assign active_precision = weight_word_valid_i ? weight_precision_i : activation_precision_i;
-  assign fill_after_word  = {1'b0, fill_count_q} +
-                            {1'b0, elems_this_word[BUFF_CNTR_WIDTH-1:0]};
+  assign words_needed  = words_per_vector(precision_i);
+  assign word_ready_o  = (fifo_count_q != 2'd2);
+  assign push          = word_valid_i && word_ready_o;
+  assign pop           = (fifo_count_q != 0) && !vector_valid_q;
+  assign head_word     = fifo_q[fifo_rd_q];
+  assign vector_valid_o = vector_valid_q;
+  assign vector_data_o  = vector_q;
 
   always_comb begin
-    // tile_k controls how many K lanes are meaningful in the current vector.
-    // The physical SA still receives ARRAY_HEIGHT lanes; lanes >= tile_k are
-    // padded with zero when the vector is emitted.  Invalid/zero tile_k values
-    // are treated as full width here; the address decoder rejects invalid CONFIG
-    // before a transaction can start.
-    active_elem_count = FULL_VECTOR_ELEMS;
-    if ((tile_k_i > 32'd0) && (tile_k_i < 32'(ARRAY_HEIGHT))) begin
-      active_elem_count = tile_k_i[BUFF_CNTR_WIDTH-1:0];
-    end
-  end
-
-  always_comb begin
-    elems_this_word = 4'd1;
-    for (dec_idx = 0; dec_idx < 8; dec_idx = dec_idx + 1) begin
-      decoded_elem[dec_idx] = '0;
-    end
-
-    unique case (active_precision)
+    vector_next = vector_q;
+    unique case (precision_i)
       DTYPE_INT4: begin
-        elems_this_word = 4'd8;
-        for (dec_idx = 0; dec_idx < 8; dec_idx = dec_idx + 1) begin
-          // Nibble bit 3 is the sign bit.  Sign extension here is the key
-          // difference from the earlier zero-extension-friendly dummy path.
-          decoded_elem[dec_idx] = {{(DATA_WIDTH-4){word_i[(4*dec_idx)+3]}},
-                                   word_i[4*dec_idx +: 4]};
+        for (lane = 0; lane < 8; lane = lane + 1) begin
+          vector_next[lane*16 +: 16] = {{12{head_word[lane*4+3]}},
+                                         head_word[lane*4 +: 4]};
         end
       end
-
       DTYPE_INT8: begin
-        elems_this_word = 4'd4;
-        for (dec_idx = 0; dec_idx < 4; dec_idx = dec_idx + 1) begin
-          // Byte bit 7 is the sign bit.
-          decoded_elem[dec_idx] = {{(DATA_WIDTH-8){word_i[(8*dec_idx)+7]}},
-                                   word_i[8*dec_idx +: 8]};
+        for (lane = 0; lane < 4; lane = lane + 1) begin
+          vector_next[(word_index_q*4+lane)*16 +: 16] =
+              {{8{head_word[lane*8+7]}}, head_word[lane*8 +: 8]};
         end
       end
-
       DTYPE_INT16: begin
-        elems_this_word = 4'd2;
-        for (dec_idx = 0; dec_idx < 2; dec_idx = dec_idx + 1) begin
-          // Halfword bit 15 is the sign bit.
-          decoded_elem[dec_idx] = {{(DATA_WIDTH-16){word_i[(16*dec_idx)+15]}},
-                                   word_i[16*dec_idx +: 16]};
+        for (lane = 0; lane < 2; lane = lane + 1) begin
+          vector_next[(word_index_q*2+lane)*16 +: 16] =
+              head_word[lane*16 +: 16];
         end
       end
-
-      default: begin
-        elems_this_word = 4'd1;
-        decoded_elem[0] = word_i;
-      end
+      default: vector_next = '0;
     endcase
   end
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      fill_count_q     <= '0;
-      weight_vec_idx_q <= '0;
-      vector_valid_o   <= 1'b0;
-      vector_data_o    <= '0;
-      sa_load_o        <= '0;
-      for (idx = 0; idx < ARRAY_HEIGHT; idx = idx + 1) begin
-        input_buffer_q[idx] <= '0;
-      end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || clear_i) begin
+      fifo_rd_q      <= 1'b0;
+      fifo_wr_q      <= 1'b0;
+      fifo_count_q   <= '0;
+      word_index_q   <= '0;
+      vector_q       <= '0;
+      vector_valid_q <= 1'b0;
     end else begin
-      vector_valid_o <= 1'b0;
-      sa_load_o      <= '0;
+      if (push) begin
+        fifo_q[fifo_wr_q] <= word_i;
+        fifo_wr_q <= ~fifo_wr_q;
+      end
 
-      if (clear_i || weight_start_i || activation_start_i) begin
-        // Start each logical stream on a clean vector boundary.  Firmware is
-        // responsible for starting every new weight column or activation row at
-        // a new APB word.  If tile_k does not consume all elements in the final
-        // word, the unused high elements are ignored rather than carried into
-        // the next vector.
-        fill_count_q <= '0;
-        if (weight_start_i) begin
-          weight_vec_idx_q <= '0;
-        end
-      end else if (word_valid) begin
-        for (elem_idx = 0; elem_idx < 8; elem_idx = elem_idx + 1) begin
-          if ((elem_idx < elems_this_word) &&
-              ((fill_count_q + elem_idx) < active_elem_count)) begin
-            input_buffer_q[fill_count_q + elem_idx] <= decoded_elem[elem_idx];
-          end
-        end
-
-        if (fill_after_word >= {1'b0, active_elem_count}) begin
-          // The current APB word completed the tile_k-wide logical vector.
-          // Older elements come from input_buffer_q; the tail comes directly
-          // from decoded_elem.  Remaining physical lanes are zero-padded.
-          for (elem_idx = 0; elem_idx < ARRAY_HEIGHT; elem_idx = elem_idx + 1) begin
-            if (elem_idx < active_elem_count) begin
-              if (elem_idx >= fill_count_q) begin
-                vector_data_o[elem_idx*DATA_WIDTH +: DATA_WIDTH] <=
-                    decoded_elem[elem_idx - fill_count_q];
-              end else begin
-                vector_data_o[elem_idx*DATA_WIDTH +: DATA_WIDTH] <=
-                    input_buffer_q[elem_idx];
-              end
-            end else begin
-              vector_data_o[elem_idx*DATA_WIDTH +: DATA_WIDTH] <=
-                  {DATA_WIDTH{1'b0}};
-            end
-          end
-
-          vector_valid_o <= 1'b1;
-          fill_count_q   <= '0;
-
-          if (weight_mode && (weight_vec_idx_q < ARRAY_WIDTH)) begin
-            // Firmware streams columns in output order. Map the first weight
-            // vector to lane 0 so compact APB output reads lane 0..N-1.
-            sa_load_o[weight_vec_idx_q] <= 1'b1;
-            weight_vec_idx_q <= weight_vec_idx_q + 1'b1;
-          end
+      if (pop) begin
+        fifo_rd_q <= ~fifo_rd_q;
+        vector_q  <= vector_next;
+        if (word_index_q == (words_needed - 1'b1)) begin
+          word_index_q   <= '0;
+          vector_valid_q <= 1'b1;
         end else begin
-          fill_count_q <= fill_after_word[BUFF_CNTR_WIDTH-1:0];
+          word_index_q <= word_index_q + 1'b1;
         end
       end
+
+      if (vector_valid_q && vector_ready_i) begin
+        vector_valid_q <= 1'b0;
+        vector_q       <= '0;
+      end
+
+      unique case ({push, pop})
+        2'b10: fifo_count_q <= fifo_count_q + 1'b1;
+        2'b01: fifo_count_q <= fifo_count_q - 1'b1;
+        default: fifo_count_q <= fifo_count_q;
+      endcase
     end
   end
 

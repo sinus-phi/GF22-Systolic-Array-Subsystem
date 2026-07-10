@@ -1,190 +1,210 @@
 `timescale 1ns/1ps
 
-//-----------------------------------------------------------------------------
-// SRAM/BRAM-friendly output buffer for the subsystem.
-//
-// group2_sa_ctrl writes one full row per beat. APB reads expose a
-// compact M x N stream of 64-bit accumulator results as 32-bit words. The
-// storage is not physically cleared; clear_i only invalidates the registered
-// read response. This matches memory macros where bulk clear is usually not
-// available.
-//
-// Physical layout is row-wide: one memory entry stores all ARRAY_WIDTH lanes of
-// one output row.  The write path decodes the controller's byte-address-like
-// row stride parametrically instead of assuming a fixed 8x8, 64-byte layout.
-// The read path maps a compact firmware word index back to row/lane/word
-// selection.
-//-----------------------------------------------------------------------------
+module group2_output_buffer (
+    input  logic         clk_i,
+    input  logic         rst_ni,
+    input  logic         clear_i,
+    input  logic         gacc_i,
 
-module group2_output_buffer #(
-    parameter int ACC_WIDTH = 64,
-    parameter int ARRAY_HEIGHT = 8,
-    parameter int ARRAY_WIDTH = 8,
-    parameter int BUFF_ADDR_WIDTH = 10
-) (
-    input  logic                         clk_i,
-    input  logic                         rst_ni,
-    input  logic                         clear_i,
+    input  logic         beat_valid_i,
+    output logic         beat_ready_o,
+    input  logic         beat_bank_i,
+    input  logic [4:0]   beat_row_i,
+    input  logic [255:0] beat_data_i,
+    output logic         beat_commit_o,
 
-    input  logic                         wr_en_i,
-    input  logic [BUFF_ADDR_WIDTH-1:0]   wr_addr_i,
-    input  logic [ARRAY_WIDTH*ACC_WIDTH-1:0] wr_data_i,
+    input  logic         bias_enable_i,
+    input  logic [511:0] bias_data_i,
 
-    input  logic                         rd_req_i,
-    input  logic [31:0]                  tile_n_i,
-    input  logic [7:0]                   rd_word_idx_i,
-    output logic [31:0]                  rd_data_o,
-    output logic                         rd_valid_o
+    input  logic         rd_req_i,
+    input  logic [8:0]   rd_word_idx_i,
+    output logic [31:0]  rd_data_o,
+    output logic         rd_ready_o
 );
 
-  localparam int WORDS_PER_ACC = ACC_WIDTH / 32;
-  localparam int ROW_DATA_WIDTH = ARRAY_WIDTH * ACC_WIDTH;
-  localparam int ROW_BYTES = ROW_DATA_WIDTH / 8;
-  localparam int ROW_INDEX_WIDTH = (ARRAY_HEIGHT <= 1) ? 1 : $clog2(ARRAY_HEIGHT);
-  localparam int LANE_INDEX_WIDTH = (ARRAY_WIDTH <= 1) ? 1 : $clog2(ARRAY_WIDTH);
-  localparam int ACC_WORD_INDEX_WIDTH = (WORDS_PER_ACC <= 1) ? 1 : $clog2(WORDS_PER_ACC);
-  localparam int COMPACT_DECODE_WIDTH =
-      ROW_INDEX_WIDTH + LANE_INDEX_WIDTH + ACC_WORD_INDEX_WIDTH;
-  localparam logic [BUFF_ADDR_WIDTH-1:0] ROW_ADDR_STRIDE = ROW_BYTES;
+  logic         pending_q [0:1];
+  logic [4:0]   pending_row_q [0:1];
+  logic [255:0] pending_data_q [0:1];
 
-  // Keep the physical output rows in a reset-less synchronous memory.  Vivado
-  // can map this style to BRAM, while an async reset on the memory array tends
-  // to force thousands of flip-flops instead.
-  (* ram_style = "block" *) logic [ROW_DATA_WIDTH-1:0] row_mem_q [0:ARRAY_HEIGHT-1];
-  logic [ROW_DATA_WIDTH-1:0] row_rd_data_q;
+  logic         sram_en [0:1];
+  logic         sram_we [0:1];
+  logic [4:0]   sram_addr [0:1];
+  logic [255:0] sram_wdata [0:1];
+  logic [255:0] sram_rdata [0:1];
+  logic         sram_rvalid [0:1];
 
-  logic [ROW_INDEX_WIDTH-1:0]      wr_row_idx;
-  logic [ROW_INDEX_WIDTH-1:0]      rd_row_idx;
-  logic [LANE_INDEX_WIDTH-1:0]     rd_lane_idx;
-  logic [ACC_WORD_INDEX_WIDTH-1:0] rd_acc_word_idx;
-  logic [LANE_INDEX_WIDTH-1:0]     rd_lane_idx_q;
-  logic [ACC_WORD_INDEX_WIDTH-1:0] rd_acc_word_idx_q;
-  logic                            rd_pipe_q;
+  logic [255:0] gacc_sum [0:1];
+  logic         commit [0:1];
+  logic         beat_accept;
 
-  function automatic logic [ROW_INDEX_WIDTH-1:0] decode_write_row_index(
-      input logic [BUFF_ADDR_WIDTH-1:0] wr_addr
-  );
-    logic [BUFF_ADDR_WIDTH-1:0] row_base;
-    integer row_scan;
-    begin
-      decode_write_row_index = '0;
-      row_base = '0;
+  logic         cache_valid_q;
+  logic [4:0]   cache_row_q;
+  logic [511:0] cache_data_q;
+  logic         cache_fill_q;
+  logic [4:0]   cache_fill_row_q;
+  logic         prefetch_q;
+  logic [4:0]   prefetch_row_q;
+  logic         cache_issue;
+  logic [4:0]   cache_issue_row;
+  logic [4:0]   request_row;
+  logic [3:0]   request_pair;
+  logic         cache_hit;
 
-      // group2_sa_ctrl presents byte-address-like row offsets:
-      //   row 0 -> 0 * ROW_BYTES
-      //   row 1 -> 1 * ROW_BYTES
-      //   ...
-      // Scan fixed row bases instead of slicing wr_addr_i[8:6], so this stays
-      // correct if ARRAY_WIDTH or ACC_WIDTH changes.
-      for (row_scan = 0; row_scan < ARRAY_HEIGHT; row_scan = row_scan + 1) begin
-        if (wr_addr >= row_base) begin
-          decode_write_row_index = row_scan[ROW_INDEX_WIDTH-1:0];
-        end
-        row_base = row_base + ROW_ADDR_STRIDE;
+  logic signed [15:0] result_lo;
+  logic signed [15:0] result_hi;
+  logic signed [15:0] bias_lo;
+  logic signed [15:0] bias_hi;
+
+  integer add_lane;
+  integer add_bank;
+  integer cmd_bank;
+  integer seq_bank;
+
+  assign request_row  = rd_word_idx_i[8:4];
+  assign request_pair = rd_word_idx_i[3:0];
+  assign cache_hit    = cache_valid_q && (cache_row_q == request_row);
+  assign rd_ready_o   = rd_req_i && cache_hit;
+
+  always_comb begin
+    result_lo = cache_data_q[(request_pair*32) +: 16];
+    result_hi = cache_data_q[(request_pair*32+16) +: 16];
+    bias_lo   = bias_data_i[(request_pair*32) +: 16];
+    bias_hi   = bias_data_i[(request_pair*32+16) +: 16];
+    if (bias_enable_i) begin
+      result_lo = result_lo + bias_lo;
+      result_hi = result_hi + bias_hi;
+    end
+    rd_data_o = {result_hi, result_lo};
+  end
+
+  assign cache_issue = !cache_fill_q &&
+                       (prefetch_q || (rd_req_i && !cache_hit));
+  assign cache_issue_row = prefetch_q ? prefetch_row_q : request_row;
+
+  always_comb begin
+    for (add_bank = 0; add_bank < 2; add_bank = add_bank + 1) begin
+      gacc_sum[add_bank] = '0;
+      for (add_lane = 0; add_lane < 16; add_lane = add_lane + 1) begin
+        gacc_sum[add_bank][add_lane*16 +: 16] =
+            pending_data_q[add_bank][add_lane*16 +: 16] +
+            sram_rdata[add_bank][add_lane*16 +: 16];
       end
     end
-  endfunction
+  end
 
-  function automatic logic [COMPACT_DECODE_WIDTH-1:0] decode_compact_index(
-      input logic [7:0] rd_idx,
-      input logic [3:0] tile_n
-  );
-    logic [7:0] words_per_row;
-    logic [7:0] row_base;
-    logic [7:0] word_in_row;
-    logic [7:0] lane_base;
-    logic [7:0] lane_word_offset;
-    logic [ROW_INDEX_WIDTH-1:0] row_idx;
-    logic [LANE_INDEX_WIDTH-1:0] lane_idx;
-    logic [ACC_WORD_INDEX_WIDTH-1:0] acc_word_idx;
-    integer row_scan;
-    integer lane_scan;
-    begin
-      words_per_row = {4'd0, tile_n} * WORDS_PER_ACC;
-      row_base      = 8'd0;
-      word_in_row   = 8'd0;
-      lane_base     = 8'd0;
-      lane_word_offset = 8'd0;
-      row_idx       = '0;
-      lane_idx      = '0;
-      acc_word_idx  = '0;
+  always_comb begin
+    beat_ready_o = !pending_q[beat_bank_i] && !cache_fill_q && !prefetch_q;
+    beat_accept  = beat_valid_i && beat_ready_o;
+    commit[0]    = 1'b0;
+    commit[1]    = 1'b0;
 
-      // Avoid run-time division/modulo in the read path. The compact stream is
-      // decoded by small fixed compare/subtract chains, which are more
-      // predictable for synthesis than a variable divider.
-      if (words_per_row != 8'd0) begin
-        for (row_scan = 0; row_scan < ARRAY_HEIGHT; row_scan = row_scan + 1) begin
-          if (rd_idx >= row_base) begin
-            row_idx     = row_scan[ROW_INDEX_WIDTH-1:0];
-            word_in_row = rd_idx - row_base;
-          end
-          row_base = row_base + words_per_row;
+    for (cmd_bank = 0; cmd_bank < 2; cmd_bank = cmd_bank + 1) begin
+      sram_en[cmd_bank]    = 1'b0;
+      sram_we[cmd_bank]    = 1'b0;
+      sram_addr[cmd_bank]  = '0;
+      sram_wdata[cmd_bank] = '0;
+
+      if (gacc_i && pending_q[cmd_bank] && sram_rvalid[cmd_bank]) begin
+        sram_en[cmd_bank]    = 1'b1;
+        sram_we[cmd_bank]    = 1'b1;
+        sram_addr[cmd_bank]  = pending_row_q[cmd_bank];
+        sram_wdata[cmd_bank] = gacc_sum[cmd_bank];
+        commit[cmd_bank]     = 1'b1;
+      end else if (beat_accept && (beat_bank_i == 1'(cmd_bank))) begin
+        sram_en[cmd_bank]   = 1'b1;
+        sram_addr[cmd_bank] = beat_row_i;
+        if (gacc_i) begin
+          sram_we[cmd_bank] = 1'b0;
+        end else begin
+          sram_we[cmd_bank]    = 1'b1;
+          sram_wdata[cmd_bank] = beat_data_i;
+          commit[cmd_bank]     = 1'b1;
         end
+      end else if (cache_issue) begin
+        sram_en[cmd_bank]   = 1'b1;
+        sram_we[cmd_bank]   = 1'b0;
+        sram_addr[cmd_bank] = cache_issue_row;
       end
-
-      for (lane_scan = 0; lane_scan < ARRAY_WIDTH; lane_scan = lane_scan + 1) begin
-        if (word_in_row >= lane_base) begin
-          lane_word_offset = word_in_row - lane_base;
-          lane_idx         = lane_scan[LANE_INDEX_WIDTH-1:0];
-          acc_word_idx     = lane_word_offset[ACC_WORD_INDEX_WIDTH-1:0];
-        end
-        lane_base = lane_base + WORDS_PER_ACC;
-      end
-
-      decode_compact_index = {
-        row_idx,
-        lane_idx,
-        acc_word_idx
-      };
     end
-  endfunction
+  end
 
-  assign wr_row_idx = decode_write_row_index(wr_addr_i);
-  assign {rd_row_idx, rd_lane_idx, rd_acc_word_idx} =
-      decode_compact_index(rd_word_idx_i, tile_n_i[3:0]);
+  assign beat_commit_o = commit[0] | commit[1];
 
   always_ff @(posedge clk_i) begin
-    if (wr_en_i) begin
-      // Whole-row write: all physical output lanes are captured together.
-      row_mem_q[wr_row_idx] <= wr_data_i;
-    end
-
-    if (rd_req_i) begin
-      // Synchronous row read.  The 32-bit word selection happens one cycle
-      // later from row_rd_data_q, matching FPGA BRAM read semantics.
-      row_rd_data_q <= row_mem_q[rd_row_idx];
-    end
-  end
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      rd_data_o      <= 32'd0;
-      rd_valid_o     <= 1'b0;
-      rd_lane_idx_q  <= '0;
-      rd_acc_word_idx_q <= '0;
-      rd_pipe_q      <= 1'b0;
+    if (!rst_ni || clear_i) begin
+      pending_q[0]       <= 1'b0;
+      pending_q[1]       <= 1'b0;
+      pending_row_q[0]   <= '0;
+      pending_row_q[1]   <= '0;
+      pending_data_q[0]  <= '0;
+      pending_data_q[1]  <= '0;
+      cache_valid_q      <= 1'b0;
+      cache_row_q        <= '0;
+      cache_data_q       <= '0;
+      cache_fill_q       <= 1'b0;
+      cache_fill_row_q   <= '0;
+      prefetch_q         <= 1'b0;
+      prefetch_row_q     <= '0;
     end else begin
-      if (clear_i) begin
-        rd_data_o         <= 32'd0;
-        rd_valid_o        <= 1'b0;
-        rd_lane_idx_q     <= '0;
-        rd_acc_word_idx_q <= '0;
-        rd_pipe_q         <= 1'b0;
-      end else begin
-        rd_valid_o <= rd_pipe_q;
-
-        if (rd_pipe_q) begin
-          rd_data_o <= row_rd_data_q[
-              (rd_lane_idx_q * ACC_WIDTH) + (rd_acc_word_idx_q * 32) +: 32];
+      for (seq_bank = 0; seq_bank < 2; seq_bank = seq_bank + 1) begin
+        if (beat_accept && gacc_i && (beat_bank_i == 1'(seq_bank))) begin
+          pending_q[seq_bank]      <= 1'b1;
+          pending_row_q[seq_bank]  <= beat_row_i;
+          pending_data_q[seq_bank] <= beat_data_i;
         end
-
-        rd_pipe_q <= rd_req_i;
-        if (rd_req_i) begin
-          rd_lane_idx_q     <= rd_lane_idx;
-          rd_acc_word_idx_q <= rd_acc_word_idx;
+        if (commit[seq_bank] && gacc_i) begin
+          pending_q[seq_bank] <= 1'b0;
         end
+      end
+
+      if (cache_issue) begin
+        cache_fill_q     <= 1'b1;
+        cache_fill_row_q <= cache_issue_row;
+        cache_valid_q    <= 1'b0;
+        prefetch_q       <= 1'b0;
+      end
+
+      if (cache_fill_q && sram_rvalid[0] && sram_rvalid[1]) begin
+        cache_data_q  <= {sram_rdata[1], sram_rdata[0]};
+        cache_row_q   <= cache_fill_row_q;
+        cache_valid_q <= 1'b1;
+        cache_fill_q  <= 1'b0;
+      end
+
+      if (rd_req_i && rd_ready_o && (request_pair == 4'd15) &&
+          (request_row != 5'd31)) begin
+        cache_valid_q  <= 1'b0;
+        prefetch_q     <= 1'b1;
+        prefetch_row_q <= request_row + 1'b1;
       end
     end
   end
+
+  generate
+    for (genvar b = 0; b < 2; b = b + 1) begin : gen_banks
+      group2_sram_32x128 i_sram_lo (
+        .clk_i    (clk_i),
+        .rst_ni   (rst_ni),
+        .en_i     (sram_en[b]),
+        .we_i     (sram_we[b]),
+        .addr_i   (sram_addr[b]),
+        .wdata_i  (sram_wdata[b][127:0]),
+        .rdata_o  (sram_rdata[b][127:0]),
+        .rvalid_o (sram_rvalid[b])
+      );
+
+      logic unused_rvalid_hi;
+      group2_sram_32x128 i_sram_hi (
+        .clk_i    (clk_i),
+        .rst_ni   (rst_ni),
+        .en_i     (sram_en[b]),
+        .we_i     (sram_we[b]),
+        .addr_i   (sram_addr[b]),
+        .wdata_i  (sram_wdata[b][255:128]),
+        .rdata_o  (sram_rdata[b][255:128]),
+        .rvalid_o (unused_rvalid_hi)
+      );
+    end
+  endgenerate
 
 endmodule

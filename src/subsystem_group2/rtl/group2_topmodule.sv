@@ -1,18 +1,5 @@
 `timescale 1ns/1ps
 
-//-----------------------------------------------------------------------------
-// Student subsystem top module.
-//
-// This is the only module that should be instantiated by the provided template:
-// Student_SS wrapper.  It connects the APB-visible frontend, compact register
-// bank, single control FSM, input unpacker, systolic array, and output buffer.
-//
-// Control ownership is intentionally centralized in group2_sa_ctrl.  The
-// other blocks either translate protocols, store state, move data, or expose
-// output memory.  This keeps the subsystem easy to integrate and avoids
-// multiple independent transaction FSMs.
-//-----------------------------------------------------------------------------
-
 module group2_topmodule (
     input  logic [15:0] PADDR,
     input  logic        PENABLE,
@@ -25,6 +12,7 @@ module group2_topmodule (
 
     input  logic        clk_i,
     input  logic        rst_ni,
+    input  logic        wrapper_fault_i,
 
     input  logic        irq_en_i,
     input  logic [15:0] pmod_gpi,
@@ -35,78 +23,81 @@ module group2_topmodule (
 
   import group2_pkg::*;
 
-  // Datapath shape for the first integration target.  The firmware sees
-  // precision-specific packed words, but the array itself always receives
-  // sign-extended 32-bit operands and produces 64-bit accumulator values.
-  localparam int DATA_WIDTH = 32;
-  localparam int ACC_WIDTH = 64;
-  localparam int ARRAY_H = SA_ARRAY_HEIGHT;
-  localparam int ARRAY_W = SA_ARRAY_WIDTH;
-  localparam int BUFF_ADDR_WIDTH = 10;
-  localparam int OUTPUT_DATA_WIDTH = ACC_WIDTH * ARRAY_W;
-
   logic [15:0] local_addr;
   logic [31:0] bus_wdata;
   logic        bus_wena;
   logic        bus_rena;
   logic [31:0] bus_rdata;
+  logic        bus_ready;
   logic        bus_err;
 
   logic        reg_wena;
   logic        reg_rena;
   logic        weight_wena;
   logic        act_wena;
+  logic        bias_wena;
+  logic        bias_rena;
+  logic [3:0]  bias_word_idx;
   logic        out_rena;
-  logic [7:0]  out_word_idx;
+  logic [8:0]  out_word_idx;
   logic        dec_err;
   logic [31:0] dec_error_code;
-  logic        bus_ready;
 
   logic [31:0] config_word;
   logic        config_is_valid;
-  logic        load_weights_cmd;
-  logic        release_output_cmd;
-  logic        soft_reset_cmd;
+  logic [511:0] bias_data;
+  logic        bias_ready;
+  logic        start_gemm_cmd;
+  logic        start_gacc_cmd;
   logic        clear_done_cmd;
   logic        clear_error_cmd;
+  logic        soft_reset_cmd;
+  logic        release_context_cmd;
   logic [31:0] reg_rdata;
 
-  logic [2:0]  phase;
-  logic        weights_valid;
-  logic        done_sticky;
+  logic        frontend_clear;
+  logic        sa_clear;
+  logic        buffer_clear;
+  logic        operation_gacc;
+  logic [4:0]  weight_vector_idx;
+  logic [4:0]  act_row_idx;
+  logic [8:0]  weight_words_left;
+  logic [8:0]  act_words_left;
+  logic        busy;
   logic        error_sticky;
-  logic        overflow_sticky;
-  logic        output_valid;
-  logic        output_full;
-  logic        output_blocked;
-  logic [31:0] output_words;
+  logic        done_sticky;
+  logic        context_valid;
+  logic        context_match;
+  logic        output_readable;
+  logic [2:0]  phase;
+  logic [31:0] progress;
   logic [31:0] error_code;
-  logic [31:0] output_rdata;
-  logic        output_read_valid;
-  logic        output_read_pending;
+  logic [9:0]  output_words;
 
-  logic        weight_start;
-  logic        activation_start;
-  logic        load_settle_active;
-  logic        output_drain_active;
+  logic [1:0]  frontend_precision;
+  logic        frontend_word_valid;
+  logic        frontend_word_ready;
+  logic        frontend_vector_valid;
+  logic        frontend_vector_ready;
+  logic [127:0] frontend_vector_data;
+  logic        weight_word_accept;
+  logic        act_word_accept;
+  logic        weight_vector_accept;
+  logic        act_vector_accept;
 
-  logic        input_vector_valid;
-  logic [ARRAY_H*DATA_WIDTH-1:0] input_vector_data;
-  logic [ARRAY_W-1:0] input_sa_load;
-  logic        sa_en;
-  logic [ARRAY_W-1:0] sa_load;
-  logic [ARRAY_H*DATA_WIDTH-1:0] sa_i_data;
-  logic [OUTPUT_DATA_WIDTH-1:0] sa_o_data;
-  logic [ARRAY_W-1:0] sa_overflow;
-  logic        mac_overflow;
+  logic        sa_act_ready;
+  logic        sa_out_valid;
+  logic        sa_out_ready;
+  logic        sa_out_bank;
+  logic [4:0]  sa_out_row;
+  logic [255:0] sa_out_data;
+  logic        sa_idle;
 
-  logic        out_wr_en;
-  logic [BUFF_ADDR_WIDTH-1:0] out_wr_addr;
-  logic [OUTPUT_DATA_WIDTH-1:0] out_wr_data;
+  logic        output_beat_commit;
+  logic [31:0] output_read_data;
+  logic        output_read_ready;
+  logic        bus_fault;
 
-  // APB timing is isolated here.  Downstream blocks see only local one-cycle
-  // read/write pulses and a held response when the output buffer needs a wait
-  // state for synchronous memory reads.
   group2_apb_if i_apb_if (
     .PADDR        (PADDR),
     .PENABLE      (PENABLE),
@@ -127,200 +118,186 @@ module group2_topmodule (
     .bus_err_i    (bus_err)
   );
 
-  // Decode the 4 KiB local address map and reject illegal accesses early.  This
-  // is where firmware-visible ordering rules are enforced, for example:
-  // weights only during LOAD_WEIGHTS and activations only during BATCH_COMPUTE.
   group2_addr_decoder i_addr_decoder (
-    .local_addr_i      (local_addr),
-    .bus_wdata_i       (bus_wdata),
-    .bus_wena_i        (bus_wena),
-    .bus_rena_i        (bus_rena),
-    .phase_i           (phase),
-    .config_valid_i    (config_is_valid),
-    .weights_valid_i   (weights_valid),
-    .output_valid_i    (output_valid),
-    .output_words_i    (output_words),
-    .reg_wena_o        (reg_wena),
-    .reg_rena_o        (reg_rena),
-    .weight_wena_o     (weight_wena),
-    .act_wena_o        (act_wena),
-    .out_rena_o        (out_rena),
-    .out_word_idx_o    (out_word_idx),
-    .dec_err_o         (dec_err),
-    .dec_error_code_o  (dec_error_code)
+    .local_addr_i        (local_addr),
+    .bus_wdata_i         (bus_wdata),
+    .bus_wena_i          (bus_wena),
+    .bus_rena_i          (bus_rena),
+    .phase_i             (phase),
+    .busy_i              (busy),
+    .config_i            (config_word),
+    .config_valid_i      (config_is_valid),
+    .bias_ready_i        (bias_ready),
+    .context_valid_i     (context_valid),
+    .context_match_i     (context_match),
+    .output_readable_i   (output_readable),
+    .output_words_i      (output_words),
+    .weight_words_left_i (weight_words_left),
+    .act_words_left_i    (act_words_left),
+    .reg_wena_o          (reg_wena),
+    .reg_rena_o          (reg_rena),
+    .weight_wena_o       (weight_wena),
+    .act_wena_o          (act_wena),
+    .bias_wena_o         (bias_wena),
+    .bias_rena_o         (bias_rena),
+    .bias_word_idx_o     (bias_word_idx),
+    .out_rena_o          (out_rena),
+    .out_word_idx_o      (out_word_idx),
+    .dec_err_o           (dec_err),
+    .dec_error_code_o    (dec_error_code)
   );
 
-  // Firmware-facing state lives here: CONFIG storage, CONTROL command pulses,
-  // STATUS readback, ERROR_CODE readback, and the compact IRQ output.
   group2_regbank i_regbank (
-    .clk_i                (clk_i),
-    .rst_ni               (rst_ni),
-    .local_addr_i         (local_addr),
-    .bus_wdata_i          (bus_wdata),
-    .reg_wena_i           (reg_wena),
-    .reg_rena_i           (reg_rena),
-    .phase_i              (phase),
-    .weights_valid_i      (weights_valid),
-    .done_sticky_i        (done_sticky),
-    .error_sticky_i       (error_sticky),
-    .overflow_sticky_i    (overflow_sticky),
-    .output_valid_i       (output_valid),
-    .output_full_i        (output_full),
-    .output_blocked_i     (output_blocked),
-    .output_words_i       (output_words),
-    .error_code_i         (error_code),
-    .irq_en_i             (irq_en_i),
-    .pmod_gpi             (pmod_gpi),
-    .config_o             (config_word),
-    .config_valid_o       (config_is_valid),
-    .load_weights_cmd_o   (load_weights_cmd),
-    .release_output_cmd_o (release_output_cmd),
-    .clear_done_cmd_o     (clear_done_cmd),
-    .clear_error_cmd_o    (clear_error_cmd),
-    .soft_reset_cmd_o     (soft_reset_cmd),
-    .reg_rdata_o          (reg_rdata),
-    .irq_o                (irq_o),
-    .pmod_gpo             (pmod_gpo),
-    .pmod_gpio_oe         (pmod_gpio_oe)
+    .clk_i                 (clk_i),
+    .rst_ni                (rst_ni),
+    .local_addr_i          (local_addr),
+    .bus_wdata_i           (bus_wdata),
+    .reg_wena_i            (reg_wena),
+    .reg_rena_i            (reg_rena),
+    .bias_wena_i           (bias_wena),
+    .bias_rena_i           (bias_rena),
+    .bias_word_idx_i       (bias_word_idx),
+    .busy_i                (busy),
+    .error_sticky_i        (error_sticky),
+    .done_sticky_i         (done_sticky),
+    .context_valid_i       (context_valid),
+    .output_readable_i     (output_readable),
+    .phase_i               (phase),
+    .progress_i            (progress),
+    .error_code_i          (error_code),
+    .output_words_i        (output_words),
+    .irq_en_i              (irq_en_i),
+    .pmod_gpi              (pmod_gpi),
+    .config_o              (config_word),
+    .config_valid_o        (config_is_valid),
+    .bias_data_o           (bias_data),
+    .bias_ready_o          (bias_ready),
+    .start_gemm_cmd_o      (start_gemm_cmd),
+    .start_gacc_cmd_o      (start_gacc_cmd),
+    .clear_done_cmd_o      (clear_done_cmd),
+    .clear_error_cmd_o     (clear_error_cmd),
+    .soft_reset_cmd_o      (soft_reset_cmd),
+    .release_context_cmd_o (release_context_cmd),
+    .reg_rdata_o           (reg_rdata),
+    .irq_o                 (irq_o),
+    .pmod_gpo              (pmod_gpo),
+    .pmod_gpio_oe          (pmod_gpio_oe)
   );
 
-  // Single transaction controller.  It owns the five visible phases and also
-  // schedules the extra SA advance cycles needed for weight-load settle and
-  // output drain/writeback.
-  group2_sa_ctrl #(
-    .ACC_WIDTH       (ACC_WIDTH),
-    .ARRAY_HEIGHT    (ARRAY_H),
-    .ARRAY_WIDTH     (ARRAY_W),
-    .MAC_STAGES      (SA_MAC_STAGES),
-    .BUFF_ADDR_WIDTH (BUFF_ADDR_WIDTH)
-  ) i_sa_ctrl (
-    .clk_i                (clk_i),
-    .rst_ni               (rst_ni),
-    .load_weights_cmd_i   (load_weights_cmd),
-    .release_output_cmd_i (release_output_cmd),
-    .clear_done_cmd_i     (clear_done_cmd),
-    .clear_error_cmd_i    (clear_error_cmd),
-    .soft_reset_cmd_i     (soft_reset_cmd),
-    .dec_err_i            (dec_err),
-    .dec_error_code_i     (dec_error_code),
-    .weight_wena_i        (weight_wena),
-    .act_wena_i           (act_wena),
-    .input_vector_valid_i (input_vector_valid),
-    .mac_overflow_i       (mac_overflow),
-    .config_i             (config_word),
-    .config_valid_i       (config_is_valid),
-    .weight_start_o       (weight_start),
-    .activation_start_o   (activation_start),
-    .load_settle_active_o (load_settle_active),
-    .output_drain_active_o(output_drain_active),
-    .out_wr_en_o          (out_wr_en),
-    .out_wr_addr_o        (out_wr_addr),
-    .phase_o              (phase),
-    .weights_valid_o      (weights_valid),
-    .done_sticky_o        (done_sticky),
-    .error_sticky_o       (error_sticky),
-    .overflow_sticky_o    (overflow_sticky),
-    .output_valid_o       (output_valid),
-    .output_full_o        (output_full),
-    .output_blocked_o     (output_blocked),
-    .output_words_o       (output_words),
-    .error_code_o         (error_code)
+  assign bus_fault = (bus_wena || bus_rena) && dec_err && bus_ready;
+
+  group2_sa_ctrl i_sa_ctrl (
+    .clk_i                  (clk_i),
+    .rst_ni                 (rst_ni),
+    .start_gemm_cmd_i       (start_gemm_cmd),
+    .start_gacc_cmd_i       (start_gacc_cmd),
+    .clear_done_cmd_i       (clear_done_cmd),
+    .clear_error_cmd_i      (clear_error_cmd),
+    .soft_reset_cmd_i       (soft_reset_cmd),
+    .release_context_cmd_i  (release_context_cmd),
+    .bus_fault_i            (bus_fault),
+    .bus_fault_code_i       (dec_error_code),
+    .wrapper_fault_i        (wrapper_fault_i),
+    .config_i               (config_word),
+    .weight_word_accept_i   (weight_word_accept),
+    .act_word_accept_i      (act_word_accept),
+    .weight_vector_accept_i (weight_vector_accept),
+    .act_vector_accept_i    (act_vector_accept),
+    .output_beat_commit_i   (output_beat_commit),
+    .frontend_clear_o       (frontend_clear),
+    .sa_clear_o             (sa_clear),
+    .buffer_clear_o         (buffer_clear),
+    .operation_gacc_o       (operation_gacc),
+    .weight_vector_idx_o    (weight_vector_idx),
+    .act_row_idx_o          (act_row_idx),
+    .weight_words_left_o    (weight_words_left),
+    .act_words_left_o       (act_words_left),
+    .busy_o                 (busy),
+    .error_sticky_o         (error_sticky),
+    .done_sticky_o          (done_sticky),
+    .context_valid_o        (context_valid),
+    .context_match_o        (context_match),
+    .output_readable_o      (output_readable),
+    .phase_o                (phase),
+    .progress_o             (progress),
+    .error_code_o           (error_code),
+    .output_words_o         (output_words)
   );
 
-  // Convert APB words into one full ARRAY_H vector.  This block does not decide
-  // when a transaction starts or ends; it only emits vector_valid and SA load
-  // pulses when enough packed elements have arrived.
-  group2_input_frontend #(
-    .DATA_WIDTH      (DATA_WIDTH),
-    .ARRAY_HEIGHT    (ARRAY_H),
-    .ARRAY_WIDTH     (ARRAY_W)
-  ) i_input_frontend (
-    .clk_i                   (clk_i),
-    .rst_ni                  (rst_ni),
-    .clear_i                 (soft_reset_cmd),
-    .weight_start_i          (weight_start),
-    .activation_start_i      (activation_start),
-    .phase_i                 (phase),
-    .weight_precision_i      (config_word[3:2]),
-    .activation_precision_i  (config_word[1:0]),
-    .tile_k_i                (cfg_tile_k(config_word)),
-    .word_i                  (bus_wdata),
-    .weight_word_valid_i     (weight_wena),
-    .activation_word_valid_i (act_wena),
-    .vector_valid_o          (input_vector_valid),
-    .vector_data_o           (input_vector_data),
-    .sa_load_o               (input_sa_load)
+  assign frontend_precision    = (phase == PH_WEIGHT) ? config_word[3:2] : config_word[1:0];
+  assign frontend_word_valid   = weight_wena || act_wena;
+  assign weight_word_accept    = weight_wena && frontend_word_ready;
+  assign act_word_accept       = act_wena && frontend_word_ready;
+  assign frontend_vector_ready = (phase == PH_WEIGHT) ? 1'b1 : sa_act_ready;
+  assign weight_vector_accept  = frontend_vector_valid && frontend_vector_ready &&
+                                 (phase == PH_WEIGHT);
+  assign act_vector_accept     = frontend_vector_valid && frontend_vector_ready &&
+                                 (phase == PH_ACTIVATION);
+
+  group2_input_frontend i_input_frontend (
+    .clk_i          (clk_i),
+    .rst_ni         (rst_ni),
+    .clear_i        (frontend_clear),
+    .precision_i    (frontend_precision),
+    .word_valid_i   (frontend_word_valid),
+    .word_ready_o   (frontend_word_ready),
+    .word_i         (bus_wdata),
+    .vector_valid_o (frontend_vector_valid),
+    .vector_ready_i (frontend_vector_ready),
+    .vector_data_o  (frontend_vector_data)
   );
 
-  // SA advances for three reasons: a real input vector arrived, the final
-  // weight-load wave still needs time to settle through the skewed path, or
-  // remaining partial sums need to be drained after the last activation vector.
-  assign sa_en     = input_vector_valid | load_settle_active | output_drain_active;
-  assign sa_load   = input_vector_valid ? input_sa_load : '0;
-  assign sa_i_data = input_vector_valid ? input_vector_data : '0;
-
-  // The systolic array remains datapath-only.  It has no visibility into APB,
-  // CONFIG fields, or firmware state.
-  group2_sa #(
-    .DATA_WIDTH   (DATA_WIDTH),
-    .ACC_WIDTH    (ACC_WIDTH),
-    .MAC_STAGES   (SA_MAC_STAGES),
-    .ARRAY_HEIGHT (ARRAY_H),
-    .ARRAY_WIDTH  (ARRAY_W)
-  ) i_sa (
-    .clk    (clk_i),
-    .rst_n  (rst_ni),
-    .en     (sa_en),
-    .load   (sa_load),
-    .i_data (sa_i_data),
-    .o_data (sa_o_data),
-    .o_overflow (sa_overflow)
+  group2_sa i_sa (
+    .clk_i          (clk_i),
+    .rst_ni         (rst_ni),
+    .clear_i        (sa_clear),
+    .weight_valid_i (weight_vector_accept),
+    .weight_col_i   (weight_vector_idx),
+    .weight_data_i  (frontend_vector_data),
+    .act_valid_i    (act_vector_accept),
+    .act_ready_o    (sa_act_ready),
+    .act_row_i      (act_row_idx),
+    .act_data_i     (frontend_vector_data),
+    .out_valid_o    (sa_out_valid),
+    .out_ready_i    (sa_out_ready),
+    .out_bank_o     (sa_out_bank),
+    .out_row_o      (sa_out_row),
+    .out_data_o     (sa_out_data),
+    .idle_o         (sa_idle)
   );
 
-  assign mac_overflow = |sa_overflow;
-  assign out_wr_data = sa_o_data;
-
-  // The output buffer stores row-wide SA results.  APB reads expose a compact
-  // stream containing only tile_m x tile_n accumulators, split into low/high
-  // 32-bit words.
-  group2_output_buffer #(
-    .ACC_WIDTH       (ACC_WIDTH),
-    .ARRAY_HEIGHT    (ARRAY_H),
-    .ARRAY_WIDTH     (ARRAY_W),
-    .BUFF_ADDR_WIDTH (BUFF_ADDR_WIDTH)
-  ) i_output_buffer (
-    .clk_i        (clk_i),
-    .rst_ni       (rst_ni),
-    .clear_i      (soft_reset_cmd | release_output_cmd),
-    .wr_en_i      (out_wr_en),
-    .wr_addr_i    (out_wr_addr),
-    .wr_data_i    (out_wr_data),
-    .rd_req_i     (out_rena),
-    .tile_n_i     (cfg_tile_n(config_word)),
-    .rd_word_idx_i(out_word_idx),
-    .rd_data_o    (output_rdata),
-    .rd_valid_o   (output_read_valid)
+  group2_output_buffer i_output_buffer (
+    .clk_i             (clk_i),
+    .rst_ni            (rst_ni),
+    .clear_i           (buffer_clear),
+    .gacc_i            (operation_gacc),
+    .beat_valid_i      (sa_out_valid),
+    .beat_ready_o      (sa_out_ready),
+    .beat_bank_i       (sa_out_bank),
+    .beat_row_i        (sa_out_row),
+    .beat_data_i       (sa_out_data),
+    .beat_commit_o     (output_beat_commit),
+    .bias_enable_i     (cfg_bias_enable(config_word)),
+    .bias_data_i       (bias_data),
+    .rd_req_i          (out_rena),
+    .rd_word_idx_i     (out_word_idx),
+    .rd_data_o         (output_read_data),
+    .rd_ready_o        (output_read_ready)
   );
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      output_read_pending <= 1'b0;
-    end else if (soft_reset_cmd) begin
-      output_read_pending <= 1'b0;
-    end else if (out_rena) begin
-      output_read_pending <= 1'b1;
-    end else if (output_read_pending && output_read_valid) begin
-      output_read_pending <= 1'b0;
+  always_comb begin
+    bus_ready = 1'b1;
+    bus_rdata = reg_rdata;
+    bus_err   = dec_err;
+
+    if (!dec_err && (weight_wena || act_wena)) begin
+      bus_ready = frontend_word_ready;
+    end else if (!dec_err && out_rena) begin
+      bus_ready = output_read_ready;
+      bus_rdata = output_read_data;
     end
   end
 
-  // Register reads/writes are ready immediately after the adapter issues the
-  // local pulse. Output reads model a synchronous memory response, so APB is
-  // held until the output buffer returns rd_valid_o.
-  assign bus_ready = out_rena ? 1'b0 :
-                     (output_read_pending ? output_read_valid : 1'b1);
-  assign bus_rdata = (output_read_pending || output_read_valid) ?
-                     output_rdata : reg_rdata;
-  assign bus_err   = dec_err;
+  wire _unused = &{1'b0, sa_idle, 1'b0};
 
 endmodule
